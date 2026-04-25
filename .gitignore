@@ -16,3 +16,4 @@ OECD Dataset.xlsx - Legenda.csv
 !.gitkeep
 supabase/.branches/
 supabase/.temp/
+.vercel

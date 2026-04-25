@@ -1,0 +1,11 @@
+OECD Dataset.xlsx - complete_p4d3_df.csv
+OECD Dataset.xlsx - Legenda.csv
+data/raw/**
+data/processed/**
+node_modules/**
+.next/**
+coverage/**
+playwright-report/**
+test-results/**
+config.toml
+tsconfig.tsbuildinfo
