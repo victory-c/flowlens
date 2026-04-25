@@ -1,0 +1,64 @@
+country_label,iso3,display_name,latitude,longitude,is_exact_country,lookup_scope,notes
+United States,USA,United States,37.090200,-95.712900,true,both,Top donor country
+China (People's Republic of),CHN,China,35.861700,104.195400,true,both,Top donor and recipient label
+Spain,ESP,Spain,40.463700,-3.749200,true,donor,Top donor country
+Canada,CAN,Canada,56.130400,-106.346800,true,donor,Top donor country
+United Kingdom,GBR,United Kingdom,55.378100,-3.436000,true,donor,Top donor country
+India,IND,India,20.593700,78.962900,true,both,Top donor and recipient label
+Mexico,MEX,Mexico,23.634500,-102.552800,true,both,Top donor and recipient label
+Switzerland,CHE,Switzerland,46.818200,8.227500,true,donor,Top donor country
+Netherlands,NLD,Netherlands,52.132600,5.291300,true,donor,Top donor country
+Denmark,DNK,Denmark,56.263900,9.501800,true,donor,Top donor country
+Sweden,SWE,Sweden,60.128200,18.643500,true,donor,Top donor country
+Qatar,QAT,Qatar,25.354800,51.183900,true,donor,Top donor country
+Italy,ITA,Italy,41.871900,12.567400,true,donor,Top donor country
+France,FRA,France,46.227600,2.213700,true,donor,Top donor country
+Belgium,BEL,Belgium,50.503900,4.469900,true,donor,Top donor country
+South Africa,ZAF,South Africa,-30.559500,22.937500,true,both,Top donor and recipient label
+Brazil,BRA,Brazil,-14.235000,-51.925300,true,both,Top donor and recipient label
+Japan,JPN,Japan,36.204800,138.252900,true,donor,Top donor country
+Colombia,COL,Colombia,4.570900,-74.297300,true,both,Top donor and recipient label
+Norway,NOR,Norway,60.472000,8.468900,true,donor,Top donor country
+Egypt,EGY,Egypt,26.820600,30.802500,true,donor,Top donor country
+Germany,DEU,Germany,51.165700,10.451500,true,donor,Top donor country
+Ireland,IRL,Ireland,53.412900,-8.243900,true,donor,Top donor country
+Portugal,PRT,Portugal,39.399900,-8.224500,true,donor,Top donor country
+Nigeria,NGA,Nigeria,9.082000,8.675300,true,both,Top donor and recipient label
+Luxembourg,LUX,Luxembourg,49.815300,6.129600,true,donor,Top donor country
+Turkey,TUR,Turkey,38.963700,35.243300,true,donor,Dataset donor label
+Türkiye,TUR,Turkey,38.963700,35.243300,true,recipient,Dataset recipient label
+Togo,TGO,Togo,8.619500,0.824800,true,donor,Top donor country
+Peru,PER,Peru,-9.190000,-75.015200,true,recipient,Top recipient country
+Kenya,KEN,Kenya,-0.023600,37.906200,true,recipient,Top recipient country
+Ethiopia,ETH,Ethiopia,9.145000,40.489700,true,recipient,Top recipient country
+Rwanda,RWA,Rwanda,-1.940300,29.873900,true,recipient,Top recipient country
+Ghana,GHA,Ghana,7.946500,-1.023200,true,recipient,Top recipient country
+Uganda,UGA,Uganda,1.373300,32.290300,true,recipient,Top recipient country
+Pakistan,PAK,Pakistan,30.375300,69.345100,true,recipient,Top recipient country
+Ukraine,UKR,Ukraine,48.379400,31.165600,true,recipient,Top recipient country
+Dominican Republic,DOM,Dominican Republic,18.735700,-70.162700,true,recipient,Top recipient country
+Tanzania,TZA,Tanzania,-6.369000,34.888800,true,recipient,Top recipient country
+Indonesia,IDN,Indonesia,-0.789300,113.921300,true,recipient,Top recipient country
+Bangladesh,BGD,Bangladesh,23.685000,90.356300,true,recipient,Top recipient country
+Senegal,SEN,Senegal,14.497400,-14.452400,true,recipient,Top recipient country
+Democratic Republic of the Congo,COD,Democratic Republic of the Congo,-4.038300,21.758700,true,recipient,Top recipient country
+Burkina Faso,BFA,Burkina Faso,12.238300,-1.561600,true,recipient,Top recipient country
+Zambia,ZMB,Zambia,-13.133900,27.849300,true,recipient,Top recipient country
+Malawi,MWI,Malawi,-13.254300,34.301500,true,recipient,Top recipient country
+Mozambique,MOZ,Mozambique,-18.665700,35.529600,true,recipient,Top recipient country
+Afghanistan,AFG,Afghanistan,33.939100,67.710000,true,recipient,Top recipient country
+"Bilateral, unspecified",,Bilateral unspecified,,,false,unspecified,Not plotted as an exact country
+"South of Sahara, regional",,South of Sahara regional,,,false,regional,Not plotted as an exact country
+"Africa, regional",,Africa regional,,,false,regional,Not plotted as an exact country
+GLOBAL or unspecified,,GLOBAL or unspecified,,,false,global,Not plotted as an exact country
+"Asia, regional",,Asia regional,,,false,regional,Not plotted as an exact country
+"South America, regional",,South America regional,,,false,regional,Not plotted as an exact country
+"America, regional",,America regional,,,false,regional,Not plotted as an exact country
+"South & Central Asia, regional",,South & Central Asia regional,,,false,regional,Not plotted as an exact country
+"Europe, regional",,Europe regional,,,false,regional,Not plotted as an exact country
+"Far East Asia, regional",,Far East Asia regional,,,false,regional,Not plotted as an exact country
+"Central America, regional",,Central America regional,,,false,regional,Not plotted as an exact country
+"Middle East, regional",,Middle East regional,,,false,regional,Not plotted as an exact country
+"Eastern Africa, regional",,Eastern Africa regional,,,false,regional,Not plotted as an exact country
+"Western Africa, regional",,Western Africa regional,,,false,regional,Not plotted as an exact country
+"Developing countries, unspecified",,Developing countries unspecified,,,false,unspecified,Not plotted as an exact country

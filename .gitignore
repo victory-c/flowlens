@@ -1,0 +1,18 @@
+.next/
+node_modules/
+coverage/
+playwright-report/
+test-results/
+.env
+.env.local
+.env*.local
+*.log
+config.toml
+tsconfig.tsbuildinfo
+data/processed/
+data/raw/
+OECD Dataset.xlsx - complete_p4d3_df.csv
+OECD Dataset.xlsx - Legenda.csv
+!.gitkeep
+supabase/.branches/
+supabase/.temp/
