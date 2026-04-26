@@ -13,9 +13,9 @@ import type {
 } from "@/shared/contracts/dashboard-data";
 import { useQuery } from "@tanstack/react-query";
 import ReactECharts from "echarts-for-react";
-import { Filter, Loader2, RotateCcw, Search, X } from "lucide-react";
+import { ChevronDown, Filter, Loader2, RotateCcw, Search, X } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CountryFlag } from "./country-flag";
 import {
   getCauseSummary,
@@ -51,22 +51,10 @@ type CountryAnnotation = {
   weight: number;
 };
 
-type CountryPolygonFeature = {
-  type: "Feature";
-  properties?: {
-    NAME?: string;
-    name?: string;
-    [key: string]: unknown;
-  };
-  geometry?: {
-    type: string;
-    coordinates: unknown;
-  };
-};
-
-type CountryPolygonCollection = {
-  type: "FeatureCollection";
-  features?: CountryPolygonFeature[];
+type GlobeZoomPointOfView = {
+  lat: number;
+  lng: number;
+  altitude: number;
 };
 
 type GlobeControls = {
@@ -247,14 +235,56 @@ export function FlowLensDashboard() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [rawPage, setRawPage] = useState(1);
   const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
+  const [analyticsActivated, setAnalyticsActivated] = useState(false);
+  const analyticsSectionRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     setRawPage(1);
   }, [filters]);
 
+  useEffect(() => {
+    if (analyticsActivated) return;
+    const section = analyticsSectionRef.current;
+    if (!section) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setAnalyticsActivated(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setAnalyticsActivated(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.18 }
+    );
+
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, [analyticsActivated]);
+
+  const scrollToAnalytics = useCallback(() => {
+    setAnalyticsActivated(true);
+    const section = analyticsSectionRef.current;
+    if (!section) return;
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  const handleFlowSelect = useCallback(
+    (flow: GlobeFlow) => {
+      setFilters({ donorCountry: flow.donorCountry, recipientCountry: flow.recipientCountry });
+      setActiveTab("flows");
+      scrollToAnalytics();
+    },
+    [scrollToAnalytics, setFilters]
+  );
+
   const filterOptionsQuery = useQuery({
     queryKey: ["dashboard", "filter-options", filters],
-    queryFn: () => getFilterOptions(filters)
+    queryFn: () => getFilterOptions(filters),
+    enabled: analyticsActivated
   });
 
   const globeQuery = useQuery({
@@ -264,37 +294,38 @@ export function FlowLensDashboard() {
 
   const metricsQuery = useQuery({
     queryKey: ["dashboard", "overview-metrics", filters],
-    queryFn: () => getOverviewMetrics(filters)
+    queryFn: () => getOverviewMetrics(filters),
+    enabled: analyticsActivated
   });
 
   const countryQuery = useQuery({
     queryKey: ["dashboard", "country-summary", filters],
     queryFn: () => getCountrySummary(filters),
-    enabled: activeTab === "country" || activeTab === "overview"
+    enabled: analyticsActivated && (activeTab === "country" || activeTab === "overview")
   });
 
   const flowSummaryQuery = useQuery({
     queryKey: ["dashboard", "flow-summary", filters],
     queryFn: () => getFlowSummary(filters),
-    enabled: activeTab === "flows" || activeTab === "overview"
+    enabled: analyticsActivated && (activeTab === "flows" || activeTab === "overview")
   });
 
   const causeQuery = useQuery({
     queryKey: ["dashboard", "cause-summary", filters],
     queryFn: () => getCauseSummary(filters),
-    enabled: activeTab === "cause" || activeTab === "overview"
+    enabled: analyticsActivated && (activeTab === "cause" || activeTab === "overview")
   });
 
   const yearlyQuery = useQuery({
     queryKey: ["dashboard", "yearly-summary", filters],
     queryFn: () => getYearlySummary(filters),
-    enabled: activeTab === "yearly" || activeTab === "overview"
+    enabled: analyticsActivated && (activeTab === "yearly" || activeTab === "overview")
   });
 
   const rawTableQuery = useQuery({
     queryKey: ["dashboard", "raw-table", filters, rawPage],
     queryFn: () => getRawTable(filters, rawPage, 25),
-    enabled: activeTab === "raw"
+    enabled: analyticsActivated && activeTab === "raw"
   });
 
   const detailQuery = useQuery({
@@ -308,126 +339,149 @@ export function FlowLensDashboard() {
 
   return (
     <main className="dashboard-shell min-h-screen">
-      <section className="hero relative overflow-hidden px-4 pb-8 pt-8 sm:px-6 lg:px-10">
+      <section className="hero relative min-h-[100svh] overflow-hidden px-4 pb-8 pt-6 sm:px-6 lg:px-10">
         <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_20%_20%,rgba(24,169,255,0.24),transparent_45%),radial-gradient(circle_at_80%_5%,rgba(84,209,156,0.2),transparent_30%),radial-gradient(circle_at_50%_120%,rgba(12,31,67,0.95),rgba(6,13,30,1)_65%)]" />
-        <div className="mx-auto max-w-[1440px]">
-          <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h1 className="text-3xl font-semibold tracking-tight text-slate-100 sm:text-4xl">
+        <div className="mx-auto flex min-h-[calc(100svh-3rem)] max-w-[1440px] flex-col">
+          <header className="mb-4">
+            <div className="max-w-3xl">
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-100 sm:text-3xl">
                 Global Donation Flows
               </h1>
-              <p className="mt-2 max-w-3xl text-sm text-slate-300 sm:text-base">
-                Explore how philanthropic funding moves from donor countries to recipient countries across
-                the world. Start with geography first, then choose a focused analysis path.
+              <p className="mt-2 text-sm text-slate-300 sm:text-base">
+                Drag to rotate the globe. Hover corridors for flow snapshots.
               </p>
-              <p className="mt-2 text-xs uppercase tracking-[0.16em] text-sky-200/80">
-                Drag to rotate {"->"} hover an arc for snapshot {"->"} click corridor to open detail tab
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-500/60 bg-slate-900/45 px-4 text-sm text-slate-100 transition hover:border-sky-300"
-                onClick={() => setFiltersOpen(true)}
-                aria-label="Open flow filters"
-              >
-                <Filter size={16} />
-                Filter Flows
-              </button>
-              <button
-                className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-500/60 bg-slate-900/45 px-4 text-sm text-slate-100 transition hover:border-sky-300"
-                onClick={resetFilters}
-              >
-                <RotateCcw size={16} />
-                Reset Filters
-              </button>
             </div>
           </header>
 
-          <div className="mb-3 flex flex-wrap gap-2">
-            {activeFilters.length === 0 ? (
-              <span className="rounded-full border border-slate-600/70 bg-slate-900/50 px-3 py-1 text-xs text-slate-300">
-                No active filters
-              </span>
-            ) : (
-              activeFilters.map((entry) => (
-                <button
-                  key={entry.key}
-                  onClick={() => clearFilter(entry.key)}
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-500/70 bg-slate-900/50 px-3 py-1 text-xs text-slate-100 hover:border-sky-300"
-                >
-                  {entry.label}: {entry.value}
-                  <X size={12} />
-                </button>
-              ))
-            )}
+          <div className="flex-1">
+            <GlobeHero rows={flowRows} loading={globeQuery.isLoading} onSelectFlow={handleFlowSelect} />
           </div>
 
-          <GlobeHero
-            rows={flowRows}
-            loading={globeQuery.isLoading}
-            onSelectFlow={(flow) => {
-              setFilters({ donorCountry: flow.donorCountry, recipientCountry: flow.recipientCountry });
-              setActiveTab("flows");
-            }}
-          />
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {ENTRY_ACTIONS.map((entry) => (
-              <button
-                key={entry.key}
-                onClick={() => setActiveTab(entry.key)}
-                className="rounded-2xl border border-slate-600/60 bg-slate-900/40 p-4 text-left transition hover:border-sky-300/80 hover:bg-slate-900/55"
-              >
-                <p className="text-sm font-semibold text-slate-100">{entry.title}</p>
-                <p className="mt-2 text-xs leading-5 text-slate-300">{entry.body}</p>
-              </button>
-            ))}
+          <div className="mt-5 flex justify-center">
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-full border border-slate-500/70 bg-slate-900/50 px-4 py-2 text-sm text-slate-100 transition hover:border-sky-300/90 hover:text-sky-100"
+              onClick={scrollToAnalytics}
+            >
+              Scroll for analytics
+              <ChevronDown size={16} />
+            </button>
           </div>
         </div>
       </section>
 
-      <section className="mx-auto max-w-[1440px] px-4 pb-12 sm:px-6 lg:px-10">
-        <TabBar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <section
+        ref={analyticsSectionRef}
+        id="analytics-section"
+        className="mx-auto max-w-[1440px] px-4 pb-12 pt-8 sm:px-6 lg:px-10"
+      >
+        {!analyticsActivated ? (
+          <div className="flex min-h-[48vh] items-center justify-center rounded-2xl border border-slate-700/70 bg-slate-950/60 text-sm text-slate-300">
+            Scroll into this section to reveal filters, tabs, and deeper analytics.
+          </div>
+        ) : (
+          <>
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-2xl font-semibold tracking-tight text-slate-100">Deeper Analysis</h2>
+                <p className="mt-2 text-sm text-slate-300">
+                  Apply filters, choose an analysis path, and drill into corridor-level evidence.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-500/60 bg-slate-900/45 px-4 text-sm text-slate-100 transition hover:border-sky-300"
+                  onClick={() => setFiltersOpen(true)}
+                  aria-label="Open flow filters"
+                >
+                  <Filter size={16} />
+                  Filter Flows
+                </button>
+                <button
+                  className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-500/60 bg-slate-900/45 px-4 text-sm text-slate-100 transition hover:border-sky-300"
+                  onClick={resetFilters}
+                >
+                  <RotateCcw size={16} />
+                  Reset Filters
+                </button>
+              </div>
+            </div>
 
-        {activeTab === "overview" && (
-          <OverviewTab
-            metrics={metricsQuery.data?.data}
-            yearly={yearlyQuery.data?.data ?? []}
-            flows={flowSummaryQuery.data?.data ?? []}
-            causeRows={causeQuery.data?.data ?? []}
-            loading={
-              metricsQuery.isLoading || yearlyQuery.isLoading || flowSummaryQuery.isLoading || causeQuery.isLoading
-            }
-          />
-        )}
+            <div className="mb-4 flex flex-wrap gap-2">
+              {activeFilters.length === 0 ? (
+                <span className="rounded-full border border-slate-600/70 bg-slate-900/50 px-3 py-1 text-xs text-slate-300">
+                  No active filters
+                </span>
+              ) : (
+                activeFilters.map((entry) => (
+                  <button
+                    key={entry.key}
+                    onClick={() => clearFilter(entry.key)}
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-500/70 bg-slate-900/50 px-3 py-1 text-xs text-slate-100 hover:border-sky-300"
+                  >
+                    {entry.label}: {entry.value}
+                    <X size={12} />
+                  </button>
+                ))
+              )}
+            </div>
 
-        {activeTab === "country" && (
-          <CountryTab rows={countryQuery.data?.data ?? []} loading={countryQuery.isLoading} />
-        )}
+            <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              {ENTRY_ACTIONS.map((entry) => (
+                <button
+                  key={entry.key}
+                  onClick={() => setActiveTab(entry.key)}
+                  className="rounded-2xl border border-slate-600/60 bg-slate-900/40 p-4 text-left transition hover:border-sky-300/80 hover:bg-slate-900/55"
+                >
+                  <p className="text-sm font-semibold text-slate-100">{entry.title}</p>
+                  <p className="mt-2 text-xs leading-5 text-slate-300">{entry.body}</p>
+                </button>
+              ))}
+            </div>
 
-        {activeTab === "flows" && (
-          <FlowTab rows={flowSummaryQuery.data?.data ?? []} loading={flowSummaryQuery.isLoading} />
-        )}
+            <TabBar activeTab={activeTab} setActiveTab={setActiveTab} />
 
-        {activeTab === "cause" && (
-          <CauseTab rows={causeQuery.data?.data ?? []} loading={causeQuery.isLoading} />
-        )}
+            {activeTab === "overview" && (
+              <OverviewTab
+                metrics={metricsQuery.data?.data}
+                yearly={yearlyQuery.data?.data ?? []}
+                flows={flowSummaryQuery.data?.data ?? []}
+                causeRows={causeQuery.data?.data ?? []}
+                loading={
+                  metricsQuery.isLoading || yearlyQuery.isLoading || flowSummaryQuery.isLoading || causeQuery.isLoading
+                }
+              />
+            )}
 
-        {activeTab === "yearly" && (
-          <YearlyTab rows={yearlyQuery.data?.data ?? []} loading={yearlyQuery.isLoading} />
-        )}
+            {activeTab === "country" && (
+              <CountryTab rows={countryQuery.data?.data ?? []} loading={countryQuery.isLoading} />
+            )}
 
-        {activeTab === "raw" && (
-          <RawDataTab
-            rows={rawTableQuery.data?.data.rows ?? []}
-            loading={rawTableQuery.isLoading}
-            page={rawTableQuery.data?.data.page ?? rawPage}
-            pageSize={rawTableQuery.data?.data.pageSize ?? 25}
-            totalRows={rawTableQuery.data?.data.totalRows ?? 0}
-            onNext={() => setRawPage((page) => page + 1)}
-            onPrev={() => setRawPage((page) => Math.max(1, page - 1))}
-            onSelectProject={setSelectedProjectKey}
-          />
+            {activeTab === "flows" && (
+              <FlowTab rows={flowSummaryQuery.data?.data ?? []} loading={flowSummaryQuery.isLoading} />
+            )}
+
+            {activeTab === "cause" && (
+              <CauseTab rows={causeQuery.data?.data ?? []} loading={causeQuery.isLoading} />
+            )}
+
+            {activeTab === "yearly" && (
+              <YearlyTab rows={yearlyQuery.data?.data ?? []} loading={yearlyQuery.isLoading} />
+            )}
+
+            {activeTab === "raw" && (
+              <RawDataTab
+                rows={rawTableQuery.data?.data.rows ?? []}
+                loading={rawTableQuery.isLoading}
+                page={rawTableQuery.data?.data.page ?? rawPage}
+                pageSize={rawTableQuery.data?.data.pageSize ?? 25}
+                totalRows={rawTableQuery.data?.data.totalRows ?? 0}
+                onNext={() => setRawPage((page) => page + 1)}
+                onPrev={() => setRawPage((page) => Math.max(1, page - 1))}
+                onSelectProject={setSelectedProjectKey}
+              />
+            )}
+          </>
         )}
       </section>
 
@@ -500,7 +554,7 @@ function GlobeHero({
   const hookedSceneRef = useRef<ArcObjectLike | null>(null);
   const [activeFlow, setActiveFlow] = useState<GlobeFlow | null>(null);
   const [globeSize, setGlobeSize] = useState({ width: 1200, height: 760 });
-  const [countryPolygons, setCountryPolygons] = useState<CountryPolygonFeature[]>([]);
+  const [zoomAltitude, setZoomAltitude] = useState(1.8);
 
   const maxAmount = useMemo(
     () => rows.reduce((acc, row) => Math.max(acc, row.totalFunding), 0),
@@ -565,7 +619,20 @@ function GlobeHero({
       );
     }
 
-    const labelLimit = globeSize.width < 640 ? 8 : globeSize.width < 1100 ? 12 : 16;
+    const widthLimit = globeSize.width < 640 ? 8 : globeSize.width < 1100 ? 12 : 16;
+    const zoomLimit =
+      zoomAltitude <= 0.85
+        ? 120
+        : zoomAltitude <= 1.1
+          ? 88
+          : zoomAltitude <= 1.35
+            ? 64
+            : zoomAltitude <= 1.65
+              ? 40
+              : zoomAltitude <= 1.95
+                ? 24
+                : 16;
+    const labelLimit = Math.max(widthLimit, zoomLimit);
     const sorted = Array.from(totals.entries())
       .sort((a, b) => b[1].amount - a[1].amount)
       .slice(0, labelLimit);
@@ -581,7 +648,7 @@ function GlobeHero({
         weight
       };
     });
-  }, [globeSize.width, rows]);
+  }, [globeSize.width, rows, zoomAltitude]);
 
   useEffect(() => {
     const element = globeWrapRef.current;
@@ -605,23 +672,6 @@ function GlobeHero({
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
-
-    fetch("/geo/ne_110m_admin_0_countries.geojson", { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error("Failed to load country polygons.");
-        return response.json() as Promise<CountryPolygonCollection>;
-      })
-      .then((payload) => {
-        if (controller.signal.aborted) return;
-        setCountryPolygons(Array.isArray(payload.features) ? payload.features : []);
-      })
-      .catch(() => {});
-
-    return () => controller.abort();
-  }, []);
-
-  useEffect(() => {
     needsArcStabilizeRef.current = true;
     stabilizeFramesRemainingRef.current = 12;
   }, [rows]);
@@ -635,7 +685,7 @@ function GlobeHero({
     controls.enablePan = false;
     controls.autoRotate = true;
     controls.autoRotateSpeed = 0.2;
-    controls.minDistance = 220;
+    controls.minDistance = 145;
     controls.maxDistance = 420;
 
     return () => {
@@ -665,8 +715,6 @@ function GlobeHero({
     }, 4200);
   };
 
-  const topFlows = rows.slice(0, 8);
-
   return (
     <div className="rounded-3xl border border-slate-700/70 bg-slate-950/45 p-4 backdrop-blur sm:p-6">
       {loading ? (
@@ -693,16 +741,9 @@ function GlobeHero({
               backgroundColor="rgba(0,0,0,0)"
               backgroundImageUrl="https://unpkg.com/three-globe/example/img/night-sky.png"
               globeImageUrl="https://unpkg.com/three-globe/example/img/earth-day.jpg"
-              polygonsData={countryPolygons}
-              polygonLabel={(d: CountryPolygonFeature) => {
-                const label = d.properties?.NAME ?? d.properties?.name;
-                return typeof label === "string" ? label : "";
-              }}
-              polygonAltitude={0.0009}
-              polygonCapColor={() => "rgba(255, 255, 255, 0)"}
-              polygonSideColor={() => "rgba(0, 0, 0, 0)"}
-              polygonStrokeColor={() => "rgba(17, 24, 39, 0.8)"}
-              polygonsTransitionDuration={0}
+              globeTileEngineUrl={(x: number, y: number, l: number) =>
+                `https://a.basemaps.cartocdn.com/light_all/${l}/${x}/${y}.png`
+              }
               arcsData={arcs}
               arcStartLat={(d: ArcDatum) => d.startLat}
               arcStartLng={(d: ArcDatum) => d.startLng}
@@ -737,6 +778,11 @@ function GlobeHero({
               htmlTransitionDuration={0}
               atmosphereColor="#c7d2fe"
               atmosphereAltitude={0.09}
+              onZoom={(pointOfView: GlobeZoomPointOfView) => {
+                setZoomAltitude((previous) =>
+                  Math.abs(previous - pointOfView.altitude) > 0.03 ? pointOfView.altitude : previous
+                );
+              }}
               onGlobeReady={() => {
                 const globe = globeRef.current;
                 if (!globe) return;
@@ -822,27 +868,6 @@ function GlobeHero({
               </p>
             </aside>
           )}
-
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {topFlows.map((flow) => (
-              <button
-                key={`${flow.donorCountry}-${flow.recipientCountry}`}
-                onClick={() => onSelectFlow(flow)}
-                className="rounded-xl border border-slate-700/70 bg-slate-950/60 p-3 text-left hover:border-sky-300/70"
-              >
-                <p className="text-xs text-slate-400">Top corridor</p>
-                <p className="mt-1 text-sm font-medium text-slate-100">
-                  <CountryFlag iso2={flow.donorIso2} country={flow.donorCountry} className="mr-1" />
-                  {flow.donorCountry}
-                  <span className="mx-1 text-slate-500">{"->"}</span>
-                  <CountryFlag iso2={flow.recipientIso2} country={flow.recipientCountry} className="mr-1" />
-                  {flow.recipientCountry}
-                </p>
-                <p className="mt-1 text-xs text-slate-300">{formatUsdMillions(flow.totalFunding, false)}</p>
-                <p className="mt-1 text-xs text-slate-400">Years: {formatYearLabels(flow.yearLabels)}</p>
-              </button>
-            ))}
-          </div>
         </div>
       )}
     </div>
