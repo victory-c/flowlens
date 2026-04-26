@@ -430,7 +430,6 @@ export class CleanedAnalyticsRepository {
       const metadata = await getCountryMetadataMap();
 
       const mapped = rows
-        .filter((row) => Boolean(row.exact_geo_flag))
         .map((row) => {
           const donor = resolveCountryMeta(String(row.donor_country), metadata);
           const recipient = resolveCountryMeta(String(row.recipient_country), metadata);
