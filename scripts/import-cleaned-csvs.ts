@@ -15,7 +15,8 @@ const FILES = {
   donorSummary: "03_df_donor_summary.csv",
   sectorSummary: "04_df_sector_summary.csv",
   donorPortfolio: "05_df_donor_portfolio.csv",
-  causeMarker: "06_df_cause_marker.csv"
+  causeMarker: "06_df_cause_marker.csv",
+  flowSummary: "07_df_flow_summary.csv"
 } as const;
 
 const MAIN_COLUMNS = [
@@ -58,6 +59,18 @@ const DONOR_COLUMNS = [
 const SECTOR_COLUMNS = ["year_label", "year_int", "sector_name", "total_funding"] as const;
 const PORTFOLIO_COLUMNS = ["donor", "sector_name", "total_funding"] as const;
 const CAUSE_COLUMNS = ["year_label", "year_int", "total_funding", "unique_projects", "cause"] as const;
+const FLOW_COLUMNS = [
+  "year_label",
+  "year_int",
+  "donor_country",
+  "region",
+  "recipient_country",
+  "flow_type",
+  "total_funding",
+  "unique_projects",
+  "exact_geo_flag",
+  "recipient_geo_type"
+] as const;
 
 function cleanedPath(fileName: string) {
   return path.resolve(process.cwd(), CLEANED_DATA_DIR, fileName);
@@ -180,7 +193,8 @@ async function main() {
         analytics_clean.donor_summary,
         analytics_clean.sector_summary,
         analytics_clean.donor_portfolio,
-        analytics_clean.cause_marker
+        analytics_clean.cause_marker,
+        analytics_clean.flow_summary
       RESTART IDENTITY
     `);
 
@@ -291,6 +305,28 @@ async function main() {
           numberValue(row.Total_Funding, "Total_Funding"),
           intValue(row.Unique_Projects, "Unique_Projects"),
           requiredText(row.Cause, "Cause")
+        ];
+      }
+    );
+
+    await loadTable(
+      client,
+      FILES.flowSummary,
+      "analytics_clean.flow_summary",
+      FLOW_COLUMNS,
+      (row) => {
+        const { yearLabel, yearInt } = yearParts(row.Year);
+        return [
+          yearLabel,
+          yearInt,
+          requiredText(row.Donor_Country, "Donor_Country"),
+          requiredText(row.Region, "Region"),
+          requiredText(row.Recipient_Country, "Recipient_Country"),
+          requiredText(row.Flow_Type, "Flow_Type"),
+          numberValue(row.Total_Funding, "Total_Funding"),
+          intValue(row.Unique_Projects, "Unique_Projects"),
+          booleanValue(row.Exact_Geo_Flag, "Exact_Geo_Flag"),
+          requiredText(row.Recipient_Geo_Type, "Recipient_Geo_Type")
         ];
       }
     );

@@ -102,13 +102,14 @@ function assertGroupedTotals(
 }
 
 async function main() {
-  const [mainRows, countryRows, donorRows, sectorRows, portfolioRows, causeRows] = await Promise.all([
+  const [mainRows, countryRows, donorRows, sectorRows, portfolioRows, causeRows, flowRows] = await Promise.all([
     readRows("01_df_main_dashboard.csv"),
     readRows("02_df_country_summary.csv"),
     readRows("03_df_donor_summary.csv"),
     readRows("04_df_sector_summary.csv"),
     readRows("05_df_donor_portfolio.csv"),
-    readRows("06_df_cause_marker.csv")
+    readRows("06_df_cause_marker.csv"),
+    readRows("07_df_flow_summary.csv")
   ]);
 
   const countryActual = new Map<string, Aggregate>();
@@ -181,9 +182,55 @@ async function main() {
     throw new Error("Cause marker total unexpectedly equals total disbursement; cause markers should overlap.");
   }
 
+  const flowTotal = flowRows.reduce((sum, row) => sum + numeric(row.Total_Funding), 0);
+  assertNear("flow summary total", flowTotal, 68_237.10386174184);
+  if (Math.abs(flowTotal - mainTotal) > EPSILON) {
+    throw new Error(`Flow summary total should reconcile to main total; got ${flowTotal} vs ${mainTotal}`);
+  }
+
+  const allowedGeoTypes = new Set(["exact_country", "regional", "unspecified", "unmapped"]);
+  let exactGeoRows = 0;
+  const yearMainTotals = new Map<string, number>();
+  const yearFlowTotals = new Map<string, number>();
+
+  for (const row of mainRows) {
+    const year = (row.Year ?? "").trim();
+    yearMainTotals.set(year, (yearMainTotals.get(year) ?? 0) + numeric(row.Amount_USD));
+  }
+
+  for (const row of flowRows) {
+    const year = (row.Year ?? "").trim();
+    yearFlowTotals.set(year, (yearFlowTotals.get(year) ?? 0) + numeric(row.Total_Funding));
+
+    const exact = (row.Exact_Geo_Flag ?? "").trim().toLowerCase();
+    if (exact !== "true" && exact !== "false") {
+      throw new Error(`Exact_Geo_Flag must be true or false; received ${row.Exact_Geo_Flag ?? ""}`);
+    }
+    if (exact === "true") exactGeoRows += 1;
+
+    const geoType = (row.Recipient_Geo_Type ?? "").trim();
+    if (!allowedGeoTypes.has(geoType)) {
+      throw new Error(`Unexpected Recipient_Geo_Type value: ${geoType}`);
+    }
+    if (exact === "true" && geoType !== "exact_country") {
+      throw new Error("Rows marked Exact_Geo_Flag=true must also use Recipient_Geo_Type=exact_country.");
+    }
+  }
+
+  if (exactGeoRows === 0) {
+    throw new Error("Flow summary must include exact geocoded rows for globe rendering.");
+  }
+
+  assertEqual("year buckets match between main and flow", yearFlowTotals.size, yearMainTotals.size);
+  for (const [year, total] of yearMainTotals) {
+    const flowYearTotal = yearFlowTotals.get(year);
+    if (flowYearTotal === undefined) throw new Error(`Flow summary missing year bucket ${year}`);
+    assertNear(`flow/year total for ${year}`, flowYearTotal, total);
+  }
+
   assertNear("main dashboard total", mainTotal, 68_237.10386159879);
   assertNear("overlapping cause marker total", causeTotal, 19_916.26334988957);
-  console.log("ok: cleaned analytics summaries reconcile and cause markers remain overlap-aware");
+  console.log("ok: cleaned analytics summaries reconcile, flow totals validate, and cause markers remain overlap-aware");
 }
 
 main().catch((error) => {

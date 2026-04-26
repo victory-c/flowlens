@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const DATA_VERSION = "cleaned-oecd-2026-04-26-v1";
+export const DATA_VERSION = "cleaned-oecd-2026-04-26-v2";
 export const AMOUNT_UNIT = "USD_MILLIONS_2023" as const;
 export const DATA_SOURCE = "cleaned_data_mart" as const;
 
@@ -14,15 +14,21 @@ export const causeSchema = z.enum([
 ]);
 
 export const dashboardViewSchema = z.enum([
+  "globe_flows",
+  "overview_metrics",
+  "country_summary",
+  "flow_summary",
+  "cause_summary",
+  "yearly_summary",
+  "raw_table",
+  "filter_options",
+  "project_detail",
   "dashboard_summary",
   "main_dashboard",
-  "country_summary",
   "donor_summary",
   "sector_summary",
   "donor_portfolio",
-  "cause_marker",
-  "project_detail",
-  "filter_options"
+  "cause_marker"
 ]);
 
 export const viewModeSchema = z.enum(["project", "row"]).default("project");
@@ -31,15 +37,18 @@ export const sortBySchema = z
   .enum([
     "amount",
     "year",
-    "donor",
-    "recipient",
-    "sector",
+    "donorCountry",
+    "recipientCountry",
+    "organization",
+    "region",
+    "cause",
     "project_key",
     "total_funding",
     "unique_projects",
-    "recipient_country",
     "sector_name",
-    "cause"
+    "donor",
+    "recipient",
+    "sector"
   ])
   .default("amount");
 
@@ -53,13 +62,18 @@ const optionalString = z
   .optional()
   .catch(undefined);
 
+const optionalNumber = z.coerce.number().finite().optional().catch(undefined);
+
 export const dashboardFiltersSchema = z.object({
   year: optionalString,
-  donor: optionalString,
-  region: optionalString,
-  recipientCountry: optionalString,
-  sector: optionalString,
   cause: causeSchema.optional().catch(undefined),
+  donorCountry: optionalString,
+  recipientCountry: optionalString,
+  region: optionalString,
+  organization: optionalString,
+  donor: optionalString,
+  sector: optionalString,
+  minAmount: optionalNumber,
   q: z.string().trim().max(240).optional().catch(undefined),
   viewMode: viewModeSchema,
   outlierOnly: z.coerce.boolean().optional().default(false)
@@ -67,7 +81,7 @@ export const dashboardFiltersSchema = z.object({
 
 export const projectPageQuerySchema = dashboardFiltersSchema.extend({
   page: z.coerce.number().int().min(1).max(5000).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  pageSize: z.coerce.number().int().min(1).max(200).default(25),
   sortBy: sortBySchema,
   sortDir: sortDirSchema
 });
@@ -89,6 +103,16 @@ export type DashboardWarning = {
   message: string;
 };
 
+export type CountryMeta = {
+  country: string;
+  displayName: string;
+  iso2: string | null;
+  iso3: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  mapped: boolean;
+};
+
 export type FilterOption = {
   label: string;
   value: string;
@@ -98,22 +122,129 @@ export type FilterOption = {
 
 export type FilterOptionsResponse = {
   years: FilterOption[];
-  donors: FilterOption[];
+  donorCountries: FilterOption[];
+  organizations: FilterOption[];
   regions: FilterOption[];
   recipientCountries: FilterOption[];
   sectors: FilterOption[];
   causes: FilterOption[];
 };
 
-export type KpiResponse = {
+export type OverviewMetrics = {
   totalFunding: number;
   validFinancialRows: number;
   uniqueProjects: number;
-  donors: number;
-  recipients: number;
+  organizations: number;
+  donorCountries: number;
+  recipientCountries: number;
   regions: number;
-  sectors: number;
 };
+
+export type GlobeFlow = {
+  donorCountry: string;
+  recipientCountry: string;
+  region: string;
+  yearLabel: string;
+  flowType: string;
+  totalFunding: number;
+  uniqueProjects: number;
+  donorIso2: string | null;
+  donorIso3: string | null;
+  donorLat: number | null;
+  donorLng: number | null;
+  recipientIso2: string | null;
+  recipientIso3: string | null;
+  recipientLat: number | null;
+  recipientLng: number | null;
+  recipientGeoType: string;
+  exactGeo: boolean;
+};
+
+export type GlobeFlowsResponse = {
+  rows: GlobeFlow[];
+  totalRows: number;
+  limit: number;
+  truncated: boolean;
+  unsupportedFilters: string[];
+};
+
+export type CountrySummaryRow = {
+  country: string;
+  region: string;
+  totalFunding: number;
+  uniqueProjects: number;
+  iso2: string | null;
+  iso3: string | null;
+};
+
+export type FlowSummaryRow = {
+  donorCountry: string;
+  recipientCountry: string;
+  region: string;
+  totalFunding: number;
+  uniqueProjects: number;
+  yearLabels: string[];
+  donorIso2: string | null;
+  donorIso3: string | null;
+  recipientIso2: string | null;
+  recipientIso3: string | null;
+};
+
+export type CauseSummaryRow = {
+  yearLabel: string;
+  cause: Cause;
+  totalFunding: number;
+  uniqueProjects: number;
+};
+
+export type YearlySummaryRow = {
+  yearLabel: string;
+  yearInt: number | null;
+  totalFunding: number;
+  uniqueProjects: number;
+  isAggregate: boolean;
+};
+
+export type RawTableRow = {
+  id: number;
+  yearLabel: string;
+  organization: string;
+  recipientCountry: string;
+  region: string;
+  sectorName: string;
+  amountUsd: number;
+  projectTitle: string | null;
+  projectId: string | null;
+  projectKey: string;
+  isAggregate: boolean;
+  causes: Cause[];
+};
+
+export type RawTableResponse = {
+  rows: RawTableRow[];
+  page: number;
+  pageSize: number;
+  totalRows: number;
+  totalProjects: number;
+};
+
+export type ProjectDetailResponse = {
+  projectKey: string;
+  projectId: string | null;
+  title: string | null;
+  organization: string;
+  recipientCountry: string;
+  region: string;
+  years: string[];
+  totalFunding: number;
+  selectedScopeFunding: number;
+  sectorBreakdown: Array<{ sectorName: string; totalFunding: number }>;
+  causes: Cause[];
+  rawRows: RawTableRow[];
+  warnings: DashboardWarning[];
+};
+
+export type KpiResponse = OverviewMetrics;
 
 export type InsightCard = {
   id: string;
@@ -129,46 +260,12 @@ export type YearlyFundingDatum = {
   isAggregate: boolean;
 };
 
-export type RecipientDatum = {
-  recipientCountry: string;
-  region: string;
-  totalFunding: number;
-  uniqueProjects: number;
-};
-
-export type DonorDatum = {
-  donor: string;
-  totalFunding: number;
-  uniqueProjects: number;
-  recipientCountriesCount: number;
-};
-
-export type SectorDatum = {
-  sectorName: string;
-  totalFunding: number;
-};
-
-export type CauseMarkerDatum = {
-  yearLabel: string;
-  cause: Cause;
-  totalFunding: number;
-  uniqueProjects: number;
-};
-
-export type DonorPortfolioDatum = {
-  donor: string;
-  sectorName: string;
-  totalFunding: number;
-};
-
 export type DashboardCharts = {
   yearlyFunding: YearlyFundingDatum[];
-  aggregateFunding: YearlyFundingDatum[];
-  topRecipients: RecipientDatum[];
-  topDonors: DonorDatum[];
-  topSectors: SectorDatum[];
-  causeMarkers: CauseMarkerDatum[];
-  donorPortfolio: DonorPortfolioDatum[];
+  topRecipients: Array<{ label: string; value: number }>;
+  topDonors: Array<{ label: string; value: number }>;
+  topSectors: Array<{ label: string; value: number }>;
+  causeMarkers: Array<{ label: string; value: number }>;
 };
 
 export type DashboardSummaryResponse = {
@@ -184,62 +281,6 @@ export type DashboardSummaryResponse = {
   generatedAt: string;
 };
 
-export type ProjectRow = {
-  projectKey: string;
-  projectId: string | null;
-  yearLabel: string;
-  donor: string;
-  recipientCountry: string;
-  region: string;
-  sectorName: string;
-  projectTitle: string | null;
-  selectedScopeFunding: number;
-  projectTotalFunding: number;
-  rowCount: number;
-  sectorCount: number;
-  isAggregate: boolean;
-  causes: Cause[];
-};
-
-export type CleanedRawRow = {
-  id: number;
-  yearLabel: string;
-  donor: string;
-  recipientCountry: string;
-  region: string;
-  sectorName: string;
-  amountUsd: number;
-  projectTitle: string | null;
-  projectId: string | null;
-  projectKey: string;
-  isAggregate: boolean;
-  causes: Cause[];
-};
-
-export type ProjectPageResponse = {
-  rows: ProjectRow[];
-  page: number;
-  pageSize: number;
-  totalRows: number;
-  totalProjects: number;
-};
-
-export type ProjectDetailResponse = {
-  projectKey: string;
-  projectId: string | null;
-  title: string | null;
-  donor: string;
-  recipientCountry: string;
-  region: string;
-  years: string[];
-  totalFunding: number;
-  selectedScopeFunding: number;
-  sectorBreakdown: SectorDatum[];
-  causes: Cause[];
-  rawRows: CleanedRawRow[];
-  warnings: DashboardWarning[];
-};
-
 export type DashboardDataResponse<T = unknown> = {
   dataVersion: string;
   amountUnit: typeof AMOUNT_UNIT;
@@ -250,7 +291,4 @@ export type DashboardDataResponse<T = unknown> = {
   data: T;
 };
 
-export type FlowUnavailableResponse = {
-  available: false;
-  warning: DashboardWarning;
-};
+export type ProjectPageResponse = RawTableResponse;

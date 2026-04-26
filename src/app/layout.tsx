@@ -4,9 +4,9 @@ import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "FlowLens",
+  title: "Global Donation Flows",
   description:
-    "A philanthropic capital intelligence dashboard for tracing OECD funding flows from donor to destination."
+    "A globe-first dashboard for exploring OECD philanthropic funding movement from donor countries to recipient countries."
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

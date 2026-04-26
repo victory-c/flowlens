@@ -1,26 +1,24 @@
 "use client";
 
-import type { DashboardFilters } from "@/server/analytics/contracts";
+import type { DashboardFilters } from "@/shared/contracts/dashboard-data";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo } from "react";
 
 const DEFAULT_FILTERS: DashboardFilters = {
-  measure: "disbursement",
   viewMode: "project",
   outlierOnly: false
 };
 
 const STRING_KEYS = [
-  "flowType",
-  "donorCountry",
-  "regionMacro",
-  "region",
-  "recipientCountry",
   "year",
+  "donorCountry",
+  "recipientCountry",
+  "region",
   "organization",
+  "donor",
   "sector",
-  "subsector",
-  "keyword"
+  "cause",
+  "q"
 ] as const;
 
 export function useDashboardFilters() {
@@ -31,26 +29,33 @@ export function useDashboardFilters() {
   const filters = useMemo<DashboardFilters>(() => {
     const next: DashboardFilters = {
       ...DEFAULT_FILTERS,
-      measure: searchParams.get("measure") === "commitment" ? "commitment" : "disbursement",
-      viewMode: searchParams.get("viewMode") === "raw" ? "raw" : "project",
+      viewMode: searchParams.get("viewMode") === "row" ? "row" : "project",
       outlierOnly: searchParams.get("outlierOnly") === "true"
     };
 
     for (const key of STRING_KEYS) {
       const value = searchParams.get(key);
-      if (value) next[key] = value;
+      if (!value) continue;
+      if (key === "cause") {
+        next.cause = value as DashboardFilters["cause"];
+      } else {
+        next[key] = value;
+      }
     }
 
-    const amountMin = searchParams.get("amountMin");
-    const amountMax = searchParams.get("amountMax");
-    if (amountMin) next.amountMin = Number(amountMin);
-    if (amountMax) next.amountMax = Number(amountMax);
+    const minAmount = searchParams.get("minAmount");
+    if (minAmount) {
+      const parsed = Number(minAmount);
+      if (Number.isFinite(parsed)) next.minAmount = parsed;
+    }
+
     return next;
   }, [searchParams]);
 
   const setFilters = useCallback(
     (patch: Partial<DashboardFilters>) => {
       const params = new URLSearchParams(searchParams.toString());
+
       for (const [key, value] of Object.entries(patch)) {
         if (value === undefined || value === null || value === "" || value === false) {
           params.delete(key);
@@ -58,6 +63,7 @@ export function useDashboardFilters() {
           params.set(key, String(value));
         }
       }
+
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     },
     [pathname, router, searchParams]

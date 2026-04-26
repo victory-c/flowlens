@@ -10,7 +10,13 @@ import {
 function paramsObject(searchParams: URLSearchParams) {
   const values = Object.fromEntries(searchParams.entries()) as Record<string, string>;
 
-  if (!values.donor && values.organization) values.donor = values.organization;
+  // Compatibility aliases from legacy routes/filters.
+  if (!values.organization && values.donor) values.organization = values.donor;
+  if (!values.organization && values.organizationName) values.organization = values.organizationName;
+  if (!values.donorCountry && values.donor_country) values.donorCountry = values.donor_country;
+  if (!values.recipientCountry && values.recipient) values.recipientCountry = values.recipient;
+  if (!values.recipientCountry && values.recipient_country) values.recipientCountry = values.recipient_country;
+  if (!values.minAmount && values.amountMin) values.minAmount = values.amountMin;
   if (!values.q && values.keyword) values.q = values.keyword;
   if (values.viewMode === "raw") values.viewMode = "row";
 

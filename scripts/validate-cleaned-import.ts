@@ -15,8 +15,11 @@ const EXPECTED = {
   sectorSummary: { rows: 110, sum: 68_237.10386159875 },
   donorPortfolio: { rows: 4_141, sum: 68_237.10386159879 },
   causeMarker: { rows: 19, sum: 19_916.26334988957 },
+  flowSummary: { rows: 2_765, sum: 68_237.10386174184 },
   missingProjectIds: 3,
-  uniqueProjectIds: 74_560
+  uniqueProjectIds: 74_560,
+  flowDonorCountries: 28,
+  flowRecipientCountries: 163
 };
 
 const FILES = [
@@ -70,6 +73,22 @@ const FILES = [
     file: "06_df_cause_marker.csv",
     amountColumn: "Total_Funding",
     columns: ["Year", "Total_Funding", "Unique_Projects", "Cause"]
+  },
+  {
+    key: "flowSummary",
+    file: "07_df_flow_summary.csv",
+    amountColumn: "Total_Funding",
+    columns: [
+      "Year",
+      "Donor_Country",
+      "Region",
+      "Recipient_Country",
+      "Flow_Type",
+      "Total_Funding",
+      "Unique_Projects",
+      "Exact_Geo_Flag",
+      "Recipient_Geo_Type"
+    ]
   }
 ] as const;
 
@@ -115,7 +134,10 @@ async function validateCsvFiles() {
   }
 
   const mainRows = await readRows("01_df_main_dashboard.csv");
+  const flowRows = await readRows("07_df_flow_summary.csv");
   const projectIds = new Set<string>();
+  const donorCountries = new Set<string>();
+  const recipientCountries = new Set<string>();
   let missingProjectIds = 0;
 
   for (const row of mainRows) {
@@ -140,6 +162,26 @@ async function validateCsvFiles() {
 
   assertEqual("main_dashboard missing project_id rows", missingProjectIds, EXPECTED.missingProjectIds);
   assertEqual("main_dashboard non-null unique project_id count", projectIds.size, EXPECTED.uniqueProjectIds);
+
+  for (const row of flowRows) {
+    donorCountries.add((row.Donor_Country ?? "").trim());
+    recipientCountries.add((row.Recipient_Country ?? "").trim());
+    const exactFlag = (row.Exact_Geo_Flag ?? "").trim().toLowerCase();
+    if (exactFlag !== "true" && exactFlag !== "false") {
+      throw new Error(`Exact_Geo_Flag must be true or false; received ${row.Exact_Geo_Flag ?? ""}`);
+    }
+  }
+
+  assertEqual(
+    "flow_summary distinct donor countries",
+    donorCountries.size,
+    EXPECTED.flowDonorCountries
+  );
+  assertEqual(
+    "flow_summary distinct recipient countries",
+    recipientCountries.size,
+    EXPECTED.flowRecipientCountries
+  );
 }
 
 async function validateDatabaseIfConfigured() {
@@ -158,15 +200,19 @@ async function validateDatabaseIfConfigured() {
         (SELECT count(*)::int FROM analytics_clean.sector_summary) AS sector_rows,
         (SELECT count(*)::int FROM analytics_clean.donor_portfolio) AS portfolio_rows,
         (SELECT count(*)::int FROM analytics_clean.cause_marker) AS cause_rows,
+        (SELECT count(*)::int FROM analytics_clean.flow_summary) AS flow_rows,
         (SELECT coalesce(sum(amount_usd), 0)::float FROM analytics_clean.main_dashboard) AS main_total,
         (SELECT coalesce(sum(total_funding), 0)::float FROM analytics_clean.country_summary) AS country_total,
         (SELECT coalesce(sum(total_funding), 0)::float FROM analytics_clean.donor_summary) AS donor_total,
         (SELECT coalesce(sum(total_funding), 0)::float FROM analytics_clean.sector_summary) AS sector_total,
         (SELECT coalesce(sum(total_funding), 0)::float FROM analytics_clean.donor_portfolio) AS portfolio_total,
         (SELECT coalesce(sum(total_funding), 0)::float FROM analytics_clean.cause_marker) AS cause_total,
+        (SELECT coalesce(sum(total_funding), 0)::float FROM analytics_clean.flow_summary) AS flow_total,
         (SELECT count(*)::int FROM analytics_clean.main_dashboard WHERE project_id IS NULL) AS missing_project_ids,
         (SELECT count(DISTINCT project_id)::int FROM analytics_clean.main_dashboard WHERE project_id IS NOT NULL) AS unique_project_ids,
-        (SELECT count(*)::int FROM analytics_clean.main_dashboard WHERE year_label = '2020-2023' AND year_int IS NULL) AS aggregate_year_rows
+        (SELECT count(*)::int FROM analytics_clean.main_dashboard WHERE year_label = '2020-2023' AND year_int IS NULL) AS aggregate_year_rows,
+        (SELECT count(DISTINCT donor_country)::int FROM analytics_clean.flow_summary) AS flow_donor_countries,
+        (SELECT count(DISTINCT recipient_country)::int FROM analytics_clean.flow_summary) AS flow_recipient_countries
     `);
 
     assertEqual("db main_dashboard row count", counts.main_rows, EXPECTED.mainDashboard.rows);
@@ -175,15 +221,23 @@ async function validateDatabaseIfConfigured() {
     assertEqual("db sector_summary row count", counts.sector_rows, EXPECTED.sectorSummary.rows);
     assertEqual("db donor_portfolio row count", counts.portfolio_rows, EXPECTED.donorPortfolio.rows);
     assertEqual("db cause_marker row count", counts.cause_rows, EXPECTED.causeMarker.rows);
+    assertEqual("db flow_summary row count", counts.flow_rows, EXPECTED.flowSummary.rows);
     assertNear("db main_dashboard funding total", counts.main_total, EXPECTED.mainDashboard.sum);
     assertNear("db country_summary funding total", counts.country_total, EXPECTED.countrySummary.sum);
     assertNear("db donor_summary funding total", counts.donor_total, EXPECTED.donorSummary.sum);
     assertNear("db sector_summary funding total", counts.sector_total, EXPECTED.sectorSummary.sum);
     assertNear("db donor_portfolio funding total", counts.portfolio_total, EXPECTED.donorPortfolio.sum);
     assertNear("db cause_marker funding total", counts.cause_total, EXPECTED.causeMarker.sum);
+    assertNear("db flow_summary funding total", counts.flow_total, EXPECTED.flowSummary.sum);
     assertEqual("db missing project_id rows", counts.missing_project_ids, EXPECTED.missingProjectIds);
     assertEqual("db non-null unique project_id count", counts.unique_project_ids, EXPECTED.uniqueProjectIds);
     assertEqual("db aggregate year rows with null year_int", counts.aggregate_year_rows, 3);
+    assertEqual("db flow donor countries", counts.flow_donor_countries, EXPECTED.flowDonorCountries);
+    assertEqual(
+      "db flow recipient countries",
+      counts.flow_recipient_countries,
+      EXPECTED.flowRecipientCountries
+    );
   } catch (error) {
     if (
       typeof error === "object" &&
