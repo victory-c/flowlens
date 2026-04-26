@@ -144,7 +144,7 @@ export type GlobeFlow = {
   donorCountry: string;
   recipientCountry: string;
   region: string;
-  yearLabel: string;
+  yearLabels: string[];
   flowType: string;
   totalFunding: number;
   uniqueProjects: number;

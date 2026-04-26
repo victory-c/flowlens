@@ -125,6 +125,11 @@ function logWidth(amount: number, max: number) {
   return 0.2 + (Math.log10(safeAmount) / Math.log10(safeMax)) * 2.2;
 }
 
+function formatYearLabels(yearLabels: string[]) {
+  if (!yearLabels.length) return "No year labels";
+  return yearLabels.join(", ");
+}
+
 function activeFilterEntries(filters: DashboardFilters) {
   const labels: Partial<Record<keyof DashboardFilters, string>> = {
     year: "Year",
@@ -229,7 +234,7 @@ export function FlowLensDashboard() {
                 the world. Start with geography first, then choose a focused analysis path.
               </p>
               <p className="mt-2 text-xs uppercase tracking-[0.16em] text-sky-200/80">
-                Drag to rotate {"->"} hover an arc for aggregated movement
+                Drag to rotate {"->"} hover an arc for snapshot {"->"} click corridor to open detail tab
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -401,7 +406,7 @@ function GlobeHero({
 }) {
   const globeRef = useRef<GlobeHandle | null>(null);
   const resumeTimerRef = useRef<number | null>(null);
-  const [hoveredFlow, setHoveredFlow] = useState<GlobeFlow | null>(null);
+  const [activeFlow, setActiveFlow] = useState<GlobeFlow | null>(null);
 
   const maxAmount = useMemo(
     () => rows.reduce((acc, row) => Math.max(acc, row.totalFunding), 0),
@@ -436,7 +441,7 @@ function GlobeHero({
     const controls = globe.controls();
     controls.enablePan = false;
     controls.autoRotate = true;
-    controls.autoRotateSpeed = 0.35;
+    controls.autoRotateSpeed = 0.2;
     controls.minDistance = 220;
     controls.maxDistance = 420;
 
@@ -458,8 +463,8 @@ function GlobeHero({
       const globe = globeRef.current;
       if (!globe) return;
       globe.controls().autoRotate = true;
-      globe.controls().autoRotateSpeed = 0.35;
-    }, 3500);
+      globe.controls().autoRotateSpeed = 0.2;
+    }, 4200);
   };
 
   const topFlows = rows.slice(0, 8);
@@ -491,53 +496,66 @@ function GlobeHero({
               arcEndLat={(d: ArcDatum) => d.endLat}
               arcEndLng={(d: ArcDatum) => d.endLng}
               arcColor={(d: ArcDatum) => [d.color, d.color]}
-              arcAltitude={(d: ArcDatum) => 0.18 + d.width * 0.02}
+              arcAltitude={(d: ArcDatum) => 0.11 + d.width * 0.015}
               arcStroke={(d: ArcDatum) => d.width}
-              arcDashLength={0.78}
-              arcDashGap={0.6}
-              arcDashInitialGap={() => Math.random()}
-              arcDashAnimateTime={1600}
+              arcsTransitionDuration={0}
               atmosphereColor="#7dd3fc"
               atmosphereAltitude={0.18}
               onArcHover={(arc: ArcDatum | null) => {
                 const next = arc?.flow ?? null;
-                setHoveredFlow(next);
-                if (next) pauseRotation();
-                else resumeRotation();
+                if (next) {
+                  setActiveFlow(next);
+                  pauseRotation();
+                } else {
+                  resumeRotation();
+                }
+              }}
+              onArcClick={(arc: ArcDatum | null) => {
+                const next = arc?.flow ?? null;
+                if (!next) return;
+                setActiveFlow(next);
+                pauseRotation();
+                onSelectFlow(next);
               }}
             />
           </div>
 
-          {hoveredFlow && (
+          {activeFlow && (
             <aside className="pointer-events-auto absolute right-3 top-3 w-[320px] rounded-xl border border-slate-600/80 bg-slate-950/90 p-4 text-sm text-slate-100 shadow-2xl backdrop-blur">
-              <p className="text-xs uppercase tracking-[0.14em] text-sky-200">Selected corridor</p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs uppercase tracking-[0.14em] text-sky-200">Corridor snapshot</p>
+                <button
+                  className="rounded-full border border-slate-500/70 p-1 text-slate-300 hover:border-sky-300 hover:text-sky-100"
+                  onClick={() => setActiveFlow(null)}
+                  aria-label="Close corridor snapshot"
+                >
+                  <X size={12} />
+                </button>
+              </div>
               <p className="mt-2 text-base font-semibold">
-                <CountryFlag iso2={hoveredFlow.donorIso2} country={hoveredFlow.donorCountry} className="mr-2" />
-                {hoveredFlow.donorCountry}
+                <CountryFlag iso2={activeFlow.donorIso2} country={activeFlow.donorCountry} className="mr-2" />
+                {activeFlow.donorCountry}
                 <span className="mx-2 text-slate-400">{"->"}</span>
                 <CountryFlag
-                  iso2={hoveredFlow.recipientIso2}
-                  country={hoveredFlow.recipientCountry}
+                  iso2={activeFlow.recipientIso2}
+                  country={activeFlow.recipientCountry}
                   className="mr-2"
                 />
-                {hoveredFlow.recipientCountry}
+                {activeFlow.recipientCountry}
               </p>
-              <p className="mt-3 text-slate-200">Total Donation: {formatUsdMillions(hoveredFlow.totalFunding)}</p>
-              <p className="mt-1 text-slate-300">Unique Projects: {formatNumber(hoveredFlow.uniqueProjects)}</p>
-              <p className="mt-1 text-slate-300">Year: {hoveredFlow.yearLabel}</p>
-              <button
-                className="mt-4 rounded-full border border-sky-300/70 px-3 py-1 text-xs text-sky-100 hover:bg-sky-500/20"
-                onClick={() => onSelectFlow(hoveredFlow)}
-              >
-                View Details
-              </button>
+              <p className="mt-3 text-slate-200">Total Donation: {formatUsdMillions(activeFlow.totalFunding)}</p>
+              <p className="mt-1 text-slate-300">Unique Projects: {formatNumber(activeFlow.uniqueProjects)}</p>
+              <p className="mt-1 text-slate-300">Years: {formatYearLabels(activeFlow.yearLabels)}</p>
+              <p className="mt-3 rounded-md border border-sky-400/35 bg-sky-500/10 p-2 text-xs text-sky-100">
+                Click this corridor to open detailed rows in the Donor {"->"} Recipient Flows tab.
+              </p>
             </aside>
           )}
 
           <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {topFlows.map((flow) => (
               <button
-                key={`${flow.donorCountry}-${flow.recipientCountry}-${flow.yearLabel}`}
+                key={`${flow.donorCountry}-${flow.recipientCountry}`}
                 onClick={() => onSelectFlow(flow)}
                 className="rounded-xl border border-slate-700/70 bg-slate-950/60 p-3 text-left hover:border-sky-300/70"
               >
@@ -550,6 +568,7 @@ function GlobeHero({
                   {flow.recipientCountry}
                 </p>
                 <p className="mt-1 text-xs text-slate-300">{formatUsdMillions(flow.totalFunding, false)}</p>
+                <p className="mt-1 text-xs text-slate-400">Years: {formatYearLabels(flow.yearLabels)}</p>
               </button>
             ))}
           </div>

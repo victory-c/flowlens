@@ -59,6 +59,30 @@ function unique<T>(values: T[]) {
   return Array.from(new Set(values));
 }
 
+function yearOrderValue(label: string) {
+  const match = label.match(/\d{4}/);
+  if (!match) return Number.POSITIVE_INFINITY;
+  const year = Number.parseInt(match[0], 10);
+  return Number.isFinite(year) ? year : Number.POSITIVE_INFINITY;
+}
+
+function sortedYearLabels(values: unknown) {
+  if (!Array.isArray(values)) return [];
+  return unique(values.map(String)).sort((a, b) => {
+    const yearDiff = yearOrderValue(a) - yearOrderValue(b);
+    if (yearDiff !== 0) return yearDiff;
+    return a.localeCompare(b);
+  });
+}
+
+function summarizedFlowType(values: unknown) {
+  if (!Array.isArray(values)) return "Cross-border";
+  const flowTypes = unique(values.map(String).filter(Boolean));
+  if (flowTypes.length === 0) return "Cross-border";
+  if (flowTypes.length === 1) return flowTypes[0];
+  return "Mixed";
+}
+
 function hasFilter(filters: DashboardFilters, key: keyof DashboardFilters) {
   return Boolean(filters[key]);
 }
@@ -386,16 +410,18 @@ export class CleanedAnalyticsRepository {
       const rows = await query<PgRow>(
         `${cte}
         SELECT
-          year_label,
           donor_country,
-          region,
           recipient_country,
-          flow_type,
-          total_funding,
-          unique_projects,
-          exact_geo_flag,
-          recipient_geo_type
+          min(region) AS region,
+          coalesce(sum(total_funding), 0)::float AS total_funding,
+          coalesce(sum(unique_projects), 0)::int AS unique_projects,
+          array_agg(DISTINCT year_label) AS year_labels,
+          array_agg(DISTINCT flow_type) AS flow_types,
+          bool_and(exact_geo_flag) AS exact_geo,
+          min(recipient_geo_type) AS recipient_geo_type
         FROM flow_filtered
+        WHERE exact_geo_flag = true
+        GROUP BY donor_country, recipient_country
         ORDER BY total_funding DESC
         LIMIT $${params.length}`,
         params
@@ -414,13 +440,13 @@ export class CleanedAnalyticsRepository {
             row
           };
         })
-        .filter((item) => item.donor.mapped && item.recipient.mapped)
+        .filter((item) => item.donor.mapped && item.recipient.mapped && Boolean(item.row.exact_geo))
         .map(({ donor, recipient, row }): GlobeFlow => ({
           donorCountry: donor.displayName,
           recipientCountry: recipient.displayName,
           region: String(row.region ?? "Unknown"),
-          yearLabel: String(row.year_label),
-          flowType: String(row.flow_type ?? "Cross-border"),
+          yearLabels: sortedYearLabels(row.year_labels),
+          flowType: summarizedFlowType(row.flow_types),
           totalFunding: num(row.total_funding),
           uniqueProjects: num(row.unique_projects),
           donorIso2: donor.iso2,
