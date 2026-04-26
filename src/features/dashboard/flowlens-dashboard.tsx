@@ -740,11 +740,10 @@ function GlobeHero({
               lineHoverPrecision={0.18}
               backgroundColor="rgba(0,0,0,0)"
               backgroundImageUrl="https://unpkg.com/three-globe/example/img/night-sky.png"
-              globeImageUrl="https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
-              bumpImageUrl="https://unpkg.com/three-globe/example/img/earth-topology.png"
+              globeImageUrl="https://unpkg.com/three-globe/example/img/earth-water.png"
               globeTileEngineUrl={(x: number, y: number, l: number) => {
                 const subdomain = ["a", "b", "c"][(x + y) % 3];
-                return `https://${subdomain}.basemaps.cartocdn.com/rastertiles/voyager/${l}/${x}/${y}@2x.png`;
+                return `https://${subdomain}.tile.openstreetmap.org/${l}/${x}/${y}.png`;
               }}
               arcsData={arcs}
               arcStartLat={(d: ArcDatum) => d.startLat}
@@ -778,8 +777,8 @@ function GlobeHero({
                 return node;
               }}
               htmlTransitionDuration={0}
-              atmosphereColor="#c7d2fe"
-              atmosphereAltitude={0.09}
+              atmosphereColor="#dbeafe"
+              atmosphereAltitude={0.06}
               onZoom={(pointOfView: GlobeZoomPointOfView) => {
                 setZoomAltitude((previous) =>
                   Math.abs(previous - pointOfView.altitude) > 0.03 ? pointOfView.altitude : previous
