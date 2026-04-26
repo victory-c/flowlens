@@ -78,7 +78,7 @@ export async function getDashboardView<TView extends keyof ViewResponseMap>(
 export function getGlobeFlows(filters: DashboardFilters) {
   return getDashboardView("globe_flows", {
     filters,
-    pageSize: 500,
+    pageSize: 200,
     sortBy: "amount",
     sortDir: "desc"
   });
