@@ -848,12 +848,13 @@ function GlobeHero({
               arcsData={arcs}
               arcStartLat={(d: ArcDatum) => d.startLat}
               arcStartLng={(d: ArcDatum) => d.startLng}
-              arcStartAltitude={0.002}
+              arcStartAltitude={0.004}
               arcEndLat={(d: ArcDatum) => d.endLat}
               arcEndLng={(d: ArcDatum) => d.endLng}
-              arcEndAltitude={0.002}
+              arcEndAltitude={0.004}
               arcColor={(d: ArcDatum) => [d.color, d.color]}
-              arcAltitude={(d: ArcDatum) => 0.11 + d.width * 0.015}
+              arcAltitude={null}
+              arcAltitudeAutoScale={0.78}
               arcStroke={(d: ArcDatum) => d.width}
               arcsTransitionDuration={0}
               htmlElementsData={countryAnnotations}
