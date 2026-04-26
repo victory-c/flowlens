@@ -51,6 +51,24 @@ type CountryAnnotation = {
   weight: number;
 };
 
+type ContinentPolygonFeature = {
+  type: "Feature";
+  properties?: {
+    NAME?: string;
+    CONTINENT?: string;
+    [key: string]: unknown;
+  };
+  geometry?: {
+    type: string;
+    coordinates: unknown;
+  };
+};
+
+type ContinentPolygonCollection = {
+  type: "FeatureCollection";
+  features?: ContinentPolygonFeature[];
+};
+
 type GlobeZoomPointOfView = {
   lat: number;
   lng: number;
@@ -152,6 +170,30 @@ const ENTRY_ACTIONS: Array<{ key: TabKey; title: string; body: string }> = [
     body: "Search and inspect cleaned records without loading full CSV files in the browser."
   }
 ];
+
+const CONTINENT_COLOR: Record<string, string> = {
+  Africa: "#f4b183",
+  Europe: "#89b4ff",
+  Asia: "#baa1ff",
+  "North America": "#8edaa8",
+  "South America": "#f5cd83",
+  Oceania: "#7fd4ff",
+  Antarctica: "#d4d4d8"
+};
+
+function hexToRgba(hex: string, alpha: number) {
+  const normalized = hex.replace("#", "");
+  const chunk = normalized.length === 3
+    ? normalized
+        .split("")
+        .map((char) => `${char}${char}`)
+        .join("")
+    : normalized.slice(0, 6);
+  const red = Number.parseInt(chunk.slice(0, 2), 16);
+  const green = Number.parseInt(chunk.slice(2, 4), 16);
+  const blue = Number.parseInt(chunk.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
 
 function logWidth(amount: number, max: number) {
   const safeAmount = Math.max(amount, 0.0001);
@@ -339,34 +381,33 @@ export function FlowLensDashboard() {
 
   return (
     <main className="dashboard-shell min-h-screen">
-      <section className="hero relative min-h-[100svh] overflow-hidden px-4 pb-8 pt-6 sm:px-6 lg:px-10">
+      <section className="hero relative h-[100svh] overflow-hidden">
         <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_20%_20%,rgba(24,169,255,0.24),transparent_45%),radial-gradient(circle_at_80%_5%,rgba(84,209,156,0.2),transparent_30%),radial-gradient(circle_at_50%_120%,rgba(12,31,67,0.95),rgba(6,13,30,1)_65%)]" />
-        <div className="mx-auto flex min-h-[calc(100svh-3rem)] max-w-[1440px] flex-col">
-          <header className="mb-4">
-            <div className="max-w-3xl">
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-100 sm:text-3xl">
-                Global Donation Flows
-              </h1>
-              <p className="mt-2 text-sm text-slate-300 sm:text-base">
-                Drag to rotate the globe. Hover corridors for flow snapshots.
-              </p>
-            </div>
-          </header>
 
-          <div className="flex-1">
-            <GlobeHero rows={flowRows} loading={globeQuery.isLoading} onSelectFlow={handleFlowSelect} />
-          </div>
+        <div className="absolute inset-0 z-0">
+          <GlobeHero rows={flowRows} loading={globeQuery.isLoading} onSelectFlow={handleFlowSelect} fullScreen />
+        </div>
 
-          <div className="mt-5 flex justify-center">
-            <button
-              type="button"
-              className="inline-flex items-center gap-2 rounded-full border border-slate-500/70 bg-slate-900/50 px-4 py-2 text-sm text-slate-100 transition hover:border-sky-300/90 hover:text-sky-100"
-              onClick={scrollToAnalytics}
-            >
-              Scroll for analytics
-              <ChevronDown size={16} />
-            </button>
+        <header className="pointer-events-none absolute left-0 right-0 top-0 z-20 px-6 pb-4 pt-6 sm:px-8 lg:px-10">
+          <div className="max-w-3xl rounded-xl border border-slate-500/25 bg-slate-950/30 p-3 backdrop-blur-sm">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-100 sm:text-3xl">
+              Global Donation Flows
+            </h1>
+            <p className="mt-2 text-sm text-slate-300 sm:text-base">
+              Drag to rotate the globe. Hover corridors for flow snapshots.
+            </p>
           </div>
+        </header>
+
+        <div className="pointer-events-none absolute bottom-6 left-0 right-0 z-20 flex justify-center px-6 sm:px-8 lg:px-10">
+          <button
+            type="button"
+            className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-slate-500/70 bg-slate-900/55 px-4 py-2 text-sm text-slate-100 transition hover:border-sky-300/90 hover:text-sky-100"
+            onClick={scrollToAnalytics}
+          >
+            Scroll for analytics
+            <ChevronDown size={16} />
+          </button>
         </div>
       </section>
 
@@ -539,11 +580,13 @@ function TabBar({
 function GlobeHero({
   rows,
   loading,
-  onSelectFlow
+  onSelectFlow,
+  fullScreen = false
 }: {
   rows: GlobeFlow[];
   loading: boolean;
   onSelectFlow: (flow: GlobeFlow) => void;
+  fullScreen?: boolean;
 }) {
   const globeRef = useRef<GlobeHandle | null>(null);
   const globeWrapRef = useRef<HTMLDivElement | null>(null);
@@ -555,6 +598,7 @@ function GlobeHero({
   const [activeFlow, setActiveFlow] = useState<GlobeFlow | null>(null);
   const [globeSize, setGlobeSize] = useState({ width: 1200, height: 760 });
   const [zoomAltitude, setZoomAltitude] = useState(1.8);
+  const [continentPolygons, setContinentPolygons] = useState<ContinentPolygonFeature[]>([]);
 
   const maxAmount = useMemo(
     () => rows.reduce((acc, row) => Math.max(acc, row.totalFunding), 0),
@@ -672,6 +716,23 @@ function GlobeHero({
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
+
+    fetch("/geo/ne_110m_admin_0_countries.geojson", { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error("Failed to load continent polygons.");
+        return response.json() as Promise<ContinentPolygonCollection>;
+      })
+      .then((payload) => {
+        if (controller.signal.aborted) return;
+        setContinentPolygons(Array.isArray(payload.features) ? payload.features : []);
+      })
+      .catch(() => {});
+
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
     needsArcStabilizeRef.current = true;
     stabilizeFramesRemainingRef.current = 12;
   }, [rows]);
@@ -680,13 +741,13 @@ function GlobeHero({
     const globe = globeRef.current;
     if (!globe) return;
 
-    globe.pointOfView({ lat: 18, lng: 20, altitude: 1.8 }, 0);
+    globe.pointOfView({ lat: 18, lng: 20, altitude: fullScreen ? 0.62 : 1.8 }, 0);
     const controls = globe.controls();
     controls.enablePan = false;
     controls.autoRotate = true;
     controls.autoRotateSpeed = 0.2;
-    controls.minDistance = 145;
-    controls.maxDistance = 420;
+    controls.minDistance = fullScreen ? 75 : 145;
+    controls.maxDistance = fullScreen ? 360 : 420;
 
     return () => {
       if (resumeTimerRef.current) window.clearTimeout(resumeTimerRef.current);
@@ -696,7 +757,7 @@ function GlobeHero({
         hookedSceneRef.current = null;
       }
     };
-  }, []);
+  }, [fullScreen]);
 
   const pauseRotation = () => {
     const globe = globeRef.current;
@@ -716,21 +777,43 @@ function GlobeHero({
   };
 
   return (
-    <div className="rounded-3xl border border-slate-700/70 bg-slate-950/45 p-4 backdrop-blur sm:p-6">
+    <div
+      className={
+        fullScreen
+          ? "h-full w-full bg-slate-950/20"
+          : "rounded-3xl border border-slate-700/70 bg-slate-950/45 p-4 backdrop-blur sm:p-6"
+      }
+    >
       {loading ? (
-        <div className="flex h-[62vh] min-h-[420px] items-center justify-center rounded-2xl border border-slate-700 bg-slate-900/70 text-sm text-slate-300">
+        <div
+          className={`flex items-center justify-center text-sm text-slate-300 ${
+            fullScreen
+              ? "h-full min-h-[100svh] bg-slate-900/50"
+              : "h-[62vh] min-h-[420px] rounded-2xl border border-slate-700 bg-slate-900/70"
+          }`}
+        >
           <Loader2 className="mr-2 animate-spin" size={16} />
           Loading aggregated globe flows...
         </div>
       ) : rows.length === 0 ? (
-        <div className="flex h-[62vh] min-h-[420px] items-center justify-center rounded-2xl border border-slate-700 bg-slate-900/70 p-6 text-center text-sm text-slate-300">
+        <div
+          className={`flex items-center justify-center p-6 text-center text-sm text-slate-300 ${
+            fullScreen
+              ? "h-full min-h-[100svh] bg-slate-900/50"
+              : "h-[62vh] min-h-[420px] rounded-2xl border border-slate-700 bg-slate-900/70"
+          }`}
+        >
           No exact-country arcs match these filters. Clear filters or lower the minimum amount.
         </div>
       ) : (
         <div className="relative">
           <div
             ref={globeWrapRef}
-            className="flex h-[62vh] min-h-[420px] items-center justify-center overflow-hidden rounded-2xl border border-slate-700/80 bg-[#030817]"
+            className={`flex items-center justify-center overflow-hidden ${
+              fullScreen
+                ? "h-[100svh] w-full bg-[#030817]"
+                : "h-[62vh] min-h-[420px] rounded-2xl border border-slate-700/80 bg-[#030817]"
+            }`}
           >
             <Globe
               ref={globeRef}
@@ -745,6 +828,18 @@ function GlobeHero({
                 const subdomain = ["a", "b", "c"][(x + y) % 3];
                 return `https://${subdomain}.tile.openstreetmap.org/${l}/${x}/${y}.png`;
               }}
+              polygonsData={continentPolygons}
+              polygonLabel={(d: ContinentPolygonFeature) => d.properties?.NAME ?? ""}
+              polygonAltitude={0.001}
+              polygonCapColor={(d: ContinentPolygonFeature) => {
+                const continent = d.properties?.CONTINENT ?? "";
+                const base = CONTINENT_COLOR[continent] ?? "#cbd5e1";
+                const alpha = zoomAltitude > 1.6 ? 0.4 : zoomAltitude > 1.1 ? 0.3 : 0.2;
+                return hexToRgba(base, alpha);
+              }}
+              polygonSideColor={() => "rgba(0,0,0,0)"}
+              polygonStrokeColor={() => "rgba(15,23,42,0.28)"}
+              polygonsTransitionDuration={0}
               arcsData={arcs}
               arcStartLat={(d: ArcDatum) => d.startLat}
               arcStartLng={(d: ArcDatum) => d.startLng}
@@ -778,7 +873,7 @@ function GlobeHero({
               }}
               htmlTransitionDuration={0}
               atmosphereColor="#dbeafe"
-              atmosphereAltitude={0.06}
+              atmosphereAltitude={fullScreen ? 0.08 : 0.06}
               onZoom={(pointOfView: GlobeZoomPointOfView) => {
                 setZoomAltitude((previous) =>
                   Math.abs(previous - pointOfView.altitude) > 0.03 ? pointOfView.altitude : previous
@@ -787,6 +882,10 @@ function GlobeHero({
               onGlobeReady={() => {
                 const globe = globeRef.current;
                 if (!globe) return;
+
+                if (fullScreen) {
+                  globe.pointOfView({ lat: 18, lng: 20, altitude: 0.62 }, 0);
+                }
 
                 const scene = globe.scene?.();
                 globe.renderer?.();
