@@ -691,17 +691,17 @@ function GlobeHero({
               rendererConfig={{ antialias: true, alpha: true }}
               lineHoverPrecision={0.18}
               backgroundColor="rgba(0,0,0,0)"
-              globeImageUrl="https://unpkg.com/three-globe/example/img/earth-water.png"
-              bumpImageUrl="https://unpkg.com/three-globe/example/img/earth-topology.png"
+              backgroundImageUrl="https://unpkg.com/three-globe/example/img/night-sky.png"
+              globeImageUrl="https://unpkg.com/three-globe/example/img/earth-day.jpg"
               polygonsData={countryPolygons}
               polygonLabel={(d: CountryPolygonFeature) => {
                 const label = d.properties?.NAME ?? d.properties?.name;
                 return typeof label === "string" ? label : "";
               }}
-              polygonAltitude={0.0015}
-              polygonCapColor={() => "rgba(148, 163, 184, 0.16)"}
+              polygonAltitude={0.0009}
+              polygonCapColor={() => "rgba(255, 255, 255, 0)"}
               polygonSideColor={() => "rgba(0, 0, 0, 0)"}
-              polygonStrokeColor={() => "rgba(203, 213, 225, 0.7)"}
+              polygonStrokeColor={() => "rgba(17, 24, 39, 0.8)"}
               polygonsTransitionDuration={0}
               arcsData={arcs}
               arcStartLat={(d: ArcDatum) => d.startLat}
@@ -735,8 +735,8 @@ function GlobeHero({
                 return node;
               }}
               htmlTransitionDuration={0}
-              atmosphereColor="#7dd3fc"
-              atmosphereAltitude={0.18}
+              atmosphereColor="#c7d2fe"
+              atmosphereAltitude={0.09}
               onGlobeReady={() => {
                 const globe = globeRef.current;
                 if (!globe) return;
