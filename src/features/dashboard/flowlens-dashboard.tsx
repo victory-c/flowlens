@@ -38,7 +38,6 @@ type ArcDatum = {
   startLng: number | null;
   endLat: number | null;
   endLng: number | null;
-  color: string;
   width: number;
   flow: GlobeFlow;
 };
@@ -204,6 +203,15 @@ function logWidth(amount: number, max: number) {
 function formatYearLabels(yearLabels: string[]) {
   if (!yearLabels.length) return "No year labels";
   return yearLabels.join(", ");
+}
+
+function stableHash(input: string) {
+  let hash = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash << 5) - hash + input.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash);
 }
 
 function isFiniteCoordinate(value: number | null): value is number {
@@ -612,13 +620,6 @@ function GlobeHero({
         startLng: row.donorLng,
         endLat: row.recipientLat,
         endLng: row.recipientLng,
-        color: row.region.toLowerCase().includes("africa")
-          ? "#18d0ff"
-          : row.region.toLowerCase().includes("asia")
-            ? "#86efac"
-            : row.region.toLowerCase().includes("europe")
-              ? "#fde047"
-              : "#fda4af",
         width: logWidth(row.totalFunding, maxAmount || 1),
         flow: row
       })),
@@ -852,9 +853,16 @@ function GlobeHero({
               arcEndLat={(d: ArcDatum) => d.endLat}
               arcEndLng={(d: ArcDatum) => d.endLng}
               arcEndAltitude={0.002}
-              arcColor={(d: ArcDatum) => [d.color, d.color]}
+              arcColor={() => ["rgba(248,250,252,0.92)", "rgba(248,250,252,0.92)"]}
               arcAltitude={(d: ArcDatum) => 0.11 + d.width * 0.015}
-              arcStroke={(d: ArcDatum) => d.width}
+              arcStroke={(d: ArcDatum) => Math.min(0.72, 0.11 + d.width * 0.17)}
+              arcDashLength={0.22}
+              arcDashGap={0.12}
+              arcDashInitialGap={(d: ArcDatum) => {
+                const seed = `${d.flow.donorCountry}-${d.flow.recipientCountry}`;
+                return (stableHash(seed) % 27) / 100;
+              }}
+              arcDashAnimateTime={0}
               arcsTransitionDuration={0}
               htmlElementsData={countryAnnotations}
               htmlLat={(d: CountryAnnotation) => d.lat}
