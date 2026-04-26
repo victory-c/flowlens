@@ -674,6 +674,7 @@ function GlobeHero({
               htmlAltitude={(d: CountryAnnotation) => 0.012 + d.weight * 0.012}
               htmlElement={(d: CountryAnnotation) => {
                 const node = document.createElement("div");
+                node.className = "globe-country-annotation";
                 node.textContent = d.country;
                 node.style.pointerEvents = "none";
                 node.style.userSelect = "none";
