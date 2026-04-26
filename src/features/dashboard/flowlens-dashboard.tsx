@@ -38,6 +38,7 @@ type ArcDatum = {
   startLng: number | null;
   endLat: number | null;
   endLng: number | null;
+  color: string;
   width: number;
   flow: GlobeFlow;
 };
@@ -611,6 +612,13 @@ function GlobeHero({
         startLng: row.donorLng,
         endLat: row.recipientLat,
         endLng: row.recipientLng,
+        color: row.region.toLowerCase().includes("africa")
+          ? "#18d0ff"
+          : row.region.toLowerCase().includes("asia")
+            ? "#86efac"
+            : row.region.toLowerCase().includes("europe")
+              ? "#fde047"
+              : "#fda4af",
         width: logWidth(row.totalFunding, maxAmount || 1),
         flow: row
       })),
@@ -840,17 +848,13 @@ function GlobeHero({
               arcsData={arcs}
               arcStartLat={(d: ArcDatum) => d.startLat}
               arcStartLng={(d: ArcDatum) => d.startLng}
-              arcStartAltitude={0.008}
+              arcStartAltitude={0.002}
               arcEndLat={(d: ArcDatum) => d.endLat}
               arcEndLng={(d: ArcDatum) => d.endLng}
-              arcEndAltitude={0.008}
-              arcColor={() => ["rgba(248,250,252,0.92)", "rgba(248,250,252,0.92)"]}
-              arcAltitude={(d: ArcDatum) => 0.16 + d.width * 0.012}
-              arcStroke={(d: ArcDatum) => Math.min(0.24, 0.06 + d.width * 0.075)}
-              arcDashLength={0.065}
-              arcDashGap={0.028}
-              arcDashInitialGap={0}
-              arcDashAnimateTime={0}
+              arcEndAltitude={0.002}
+              arcColor={(d: ArcDatum) => [d.color, d.color]}
+              arcAltitude={(d: ArcDatum) => 0.11 + d.width * 0.015}
+              arcStroke={(d: ArcDatum) => d.width}
               arcsTransitionDuration={0}
               htmlElementsData={countryAnnotations}
               htmlLat={(d: CountryAnnotation) => d.lat}
