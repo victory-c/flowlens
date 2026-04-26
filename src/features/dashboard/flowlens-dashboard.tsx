@@ -381,8 +381,8 @@ export function FlowLensDashboard() {
 
   return (
     <main className="dashboard-shell min-h-screen">
-      <section className="hero relative h-[100svh] overflow-hidden">
-        <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_20%_20%,rgba(24,169,255,0.24),transparent_45%),radial-gradient(circle_at_80%_5%,rgba(84,209,156,0.2),transparent_30%),radial-gradient(circle_at_50%_120%,rgba(12,31,67,0.95),rgba(6,13,30,1)_65%)]" />
+      <section className="hero relative h-[100svh] overflow-hidden bg-[#01040a]">
+        <div className="absolute inset-0 -z-20 bg-[#01040a]" />
 
         <div className="absolute inset-0 z-0">
           <GlobeHero rows={flowRows} loading={globeQuery.isLoading} onSelectFlow={handleFlowSelect} fullScreen />
@@ -725,7 +725,11 @@ function GlobeHero({
       })
       .then((payload) => {
         if (controller.signal.aborted) return;
-        setContinentPolygons(Array.isArray(payload.features) ? payload.features : []);
+        const usable = (Array.isArray(payload.features) ? payload.features : []).filter((feature) => {
+          const continent = feature.properties?.CONTINENT ?? "";
+          return Boolean(CONTINENT_COLOR[continent]);
+        });
+        setContinentPolygons(usable);
       })
       .catch(() => {});
 
@@ -780,7 +784,7 @@ function GlobeHero({
     <div
       className={
         fullScreen
-          ? "h-full w-full bg-slate-950/20"
+          ? "h-full w-full bg-[#01040a]"
           : "rounded-3xl border border-slate-700/70 bg-slate-950/45 p-4 backdrop-blur sm:p-6"
       }
     >
@@ -788,7 +792,7 @@ function GlobeHero({
         <div
           className={`flex items-center justify-center text-sm text-slate-300 ${
             fullScreen
-              ? "h-full min-h-[100svh] bg-slate-900/50"
+              ? "h-full min-h-[100svh] bg-[#01040a]"
               : "h-[62vh] min-h-[420px] rounded-2xl border border-slate-700 bg-slate-900/70"
           }`}
         >
@@ -799,7 +803,7 @@ function GlobeHero({
         <div
           className={`flex items-center justify-center p-6 text-center text-sm text-slate-300 ${
             fullScreen
-              ? "h-full min-h-[100svh] bg-slate-900/50"
+              ? "h-full min-h-[100svh] bg-[#01040a]"
               : "h-[62vh] min-h-[420px] rounded-2xl border border-slate-700 bg-slate-900/70"
           }`}
         >
@@ -811,7 +815,7 @@ function GlobeHero({
             ref={globeWrapRef}
             className={`flex items-center justify-center overflow-hidden ${
               fullScreen
-                ? "h-[100svh] w-full bg-[#030817]"
+                ? "h-[100svh] w-full bg-[#01040a]"
                 : "h-[62vh] min-h-[420px] rounded-2xl border border-slate-700/80 bg-[#030817]"
             }`}
           >
@@ -825,20 +829,21 @@ function GlobeHero({
               backgroundImageUrl="https://unpkg.com/three-globe/example/img/night-sky.png"
               globeImageUrl="https://unpkg.com/three-globe/example/img/earth-water.png"
               globeTileEngineUrl={(x: number, y: number, l: number) => {
-                const subdomain = ["a", "b", "c"][(x + y) % 3];
-                return `https://${subdomain}.tile.openstreetmap.org/${l}/${x}/${y}.png`;
+                const subdomain = ["a", "b", "c", "d"][(x + y) % 4];
+                return `https://${subdomain}.basemaps.cartocdn.com/rastertiles/voyager/${l}/${x}/${y}@2x.png`;
               }}
               polygonsData={continentPolygons}
               polygonLabel={(d: ContinentPolygonFeature) => d.properties?.NAME ?? ""}
-              polygonAltitude={0.001}
+              polygonAltitude={0.0004}
+              polygonCapCurvatureResolution={1}
               polygonCapColor={(d: ContinentPolygonFeature) => {
                 const continent = d.properties?.CONTINENT ?? "";
                 const base = CONTINENT_COLOR[continent] ?? "#cbd5e1";
-                const alpha = zoomAltitude > 1.6 ? 0.4 : zoomAltitude > 1.1 ? 0.3 : 0.2;
+                const alpha = zoomAltitude > 1.6 ? 0.22 : zoomAltitude > 1.1 ? 0.18 : 0.14;
                 return hexToRgba(base, alpha);
               }}
               polygonSideColor={() => "rgba(0,0,0,0)"}
-              polygonStrokeColor={() => "rgba(15,23,42,0.28)"}
+              polygonStrokeColor={() => "rgba(15,23,42,0.16)"}
               polygonsTransitionDuration={0}
               arcsData={arcs}
               arcStartLat={(d: ArcDatum) => d.startLat}
