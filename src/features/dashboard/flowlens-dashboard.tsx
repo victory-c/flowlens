@@ -48,9 +48,7 @@ type CountryAnnotation = {
   country: string;
   lat: number;
   lng: number;
-  labelSize: number;
-  dotRadius: number;
-  color: string;
+  weight: number;
 };
 
 type GlobeControls = {
@@ -158,6 +156,10 @@ function logWidth(amount: number, max: number) {
 function formatYearLabels(yearLabels: string[]) {
   if (!yearLabels.length) return "No year labels";
   return yearLabels.join(", ");
+}
+
+function isFiniteCoordinate(value: number | null): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function materialList(material: ArcObjectLike["material"]) {
@@ -524,7 +526,7 @@ function GlobeHero({
       lng: number | null,
       amount: number
     ) => {
-      if (!key || lat === null || lng === null) return;
+      if (!key || !isFiniteCoordinate(lat) || !isFiniteCoordinate(lng)) return;
       const existing = totals.get(key);
       if (existing) {
         existing.amount += amount;
@@ -551,15 +553,13 @@ function GlobeHero({
     const topAmount = sorted[0]?.[1].amount ?? 1;
 
     return sorted.map(([key, item]) => {
-      const ratio = Math.max(0.2, Math.min(1, item.amount / topAmount));
+      const weight = Math.max(0.2, Math.min(1, item.amount / topAmount));
       return {
         key,
         country: item.country,
         lat: item.lat,
         lng: item.lng,
-        labelSize: 0.6 + ratio * 0.34,
-        dotRadius: 0.12 + ratio * 0.08,
-        color: "rgba(226, 232, 240, 0.9)"
+        weight
       };
     });
   }, [globeSize.width, rows]);
@@ -668,15 +668,26 @@ function GlobeHero({
               arcAltitude={(d: ArcDatum) => 0.11 + d.width * 0.015}
               arcStroke={(d: ArcDatum) => d.width}
               arcsTransitionDuration={0}
-              labelsData={countryAnnotations}
-              labelLat={(d: CountryAnnotation) => d.lat}
-              labelLng={(d: CountryAnnotation) => d.lng}
-              labelText={(d: CountryAnnotation) => d.country}
-              labelSize={(d: CountryAnnotation) => d.labelSize}
-              labelDotRadius={(d: CountryAnnotation) => d.dotRadius}
-              labelColor={(d: CountryAnnotation) => d.color}
-              labelAltitude={0.01}
-              labelsTransitionDuration={0}
+              htmlElementsData={countryAnnotations}
+              htmlLat={(d: CountryAnnotation) => d.lat}
+              htmlLng={(d: CountryAnnotation) => d.lng}
+              htmlAltitude={(d: CountryAnnotation) => 0.012 + d.weight * 0.012}
+              htmlElement={(d: CountryAnnotation) => {
+                const node = document.createElement("div");
+                node.textContent = d.country;
+                node.style.pointerEvents = "none";
+                node.style.userSelect = "none";
+                node.style.whiteSpace = "nowrap";
+                node.style.fontSize = `${11 + Math.round(d.weight * 3)}px`;
+                node.style.fontWeight = "700";
+                node.style.letterSpacing = "0.02em";
+                node.style.color = "#e2e8f0";
+                node.style.textShadow = "0 0 8px rgba(2, 6, 23, 0.9), 0 0 18px rgba(14, 165, 233, 0.5)";
+                node.style.transform = "translate(-50%, -50%)";
+                node.style.opacity = "0.95";
+                return node;
+              }}
+              htmlTransitionDuration={0}
               atmosphereColor="#7dd3fc"
               atmosphereAltitude={0.18}
               onGlobeReady={() => {
