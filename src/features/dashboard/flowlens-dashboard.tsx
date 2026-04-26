@@ -61,9 +61,29 @@ type GlobeControls = {
   maxDistance: number;
 };
 
+type ArcMaterialLike = {
+  transparent?: boolean;
+  depthWrite?: boolean;
+  depthTest?: boolean;
+};
+
+type ArcObjectLike = {
+  __globeObjType?: string;
+  material?: ArcMaterialLike | ArcMaterialLike[];
+  frustumCulled?: boolean;
+  traverse?: (callback: (obj: ArcObjectLike) => void) => void;
+  onBeforeRender?: (...args: unknown[]) => void;
+};
+
+type GlobeRendererLike = {
+  getContext?: () => unknown;
+};
+
 type GlobeHandle = {
   pointOfView: (position: { lat: number; lng: number; altitude: number }, ms: number) => void;
   controls: () => GlobeControls;
+  scene: () => ArcObjectLike;
+  renderer: () => GlobeRendererLike;
 };
 
 type TabKey = "overview" | "country" | "flows" | "cause" | "yearly" | "raw";
@@ -138,6 +158,43 @@ function logWidth(amount: number, max: number) {
 function formatYearLabels(yearLabels: string[]) {
   if (!yearLabels.length) return "No year labels";
   return yearLabels.join(", ");
+}
+
+function materialList(material: ArcObjectLike["material"]) {
+  if (!material) return [];
+  return Array.isArray(material) ? material : [material];
+}
+
+function applyArcObjectStability(root: ArcObjectLike) {
+  const applyNode = (node: ArcObjectLike) => {
+    node.frustumCulled = false;
+    for (const material of materialList(node.material)) {
+      material.transparent = true;
+      material.depthWrite = false;
+      material.depthTest = true;
+    }
+  };
+
+  applyNode(root);
+  if (!root.traverse) return 1;
+
+  let count = 0;
+  root.traverse((node) => {
+    applyNode(node);
+    count += 1;
+  });
+  return count;
+}
+
+function stabilizeArcScene(scene: ArcObjectLike) {
+  if (!scene.traverse) return 0;
+
+  let touched = 0;
+  scene.traverse((node) => {
+    if (node.__globeObjType !== "arc") return;
+    touched += applyArcObjectStability(node);
+  });
+  return touched;
 }
 
 function activeFilterEntries(filters: DashboardFilters) {
@@ -417,6 +474,10 @@ function GlobeHero({
   const globeRef = useRef<GlobeHandle | null>(null);
   const globeWrapRef = useRef<HTMLDivElement | null>(null);
   const resumeTimerRef = useRef<number | null>(null);
+  const needsArcStabilizeRef = useRef(false);
+  const stabilizeFramesRemainingRef = useRef(0);
+  const previousSceneBeforeRenderRef = useRef<((...args: unknown[]) => void) | null>(null);
+  const hookedSceneRef = useRef<ArcObjectLike | null>(null);
   const [activeFlow, setActiveFlow] = useState<GlobeFlow | null>(null);
   const [globeSize, setGlobeSize] = useState({ width: 1200, height: 760 });
 
@@ -525,6 +586,11 @@ function GlobeHero({
   }, []);
 
   useEffect(() => {
+    needsArcStabilizeRef.current = true;
+    stabilizeFramesRemainingRef.current = 12;
+  }, [rows]);
+
+  useEffect(() => {
     const globe = globeRef.current;
     if (!globe) return;
 
@@ -538,6 +604,11 @@ function GlobeHero({
 
     return () => {
       if (resumeTimerRef.current) window.clearTimeout(resumeTimerRef.current);
+      const hookedScene = hookedSceneRef.current;
+      if (hookedScene) {
+        hookedScene.onBeforeRender = previousSceneBeforeRenderRef.current ?? undefined;
+        hookedSceneRef.current = null;
+      }
     };
   }, []);
 
@@ -581,14 +652,18 @@ function GlobeHero({
               ref={globeRef}
               width={globeSize.width}
               height={globeSize.height}
+              rendererConfig={{ antialias: true, alpha: true }}
+              lineHoverPrecision={0.18}
               backgroundColor="rgba(0,0,0,0)"
               globeImageUrl="https://unpkg.com/three-globe/example/img/earth-night.jpg"
               bumpImageUrl="https://unpkg.com/three-globe/example/img/earth-topology.png"
               arcsData={arcs}
               arcStartLat={(d: ArcDatum) => d.startLat}
               arcStartLng={(d: ArcDatum) => d.startLng}
+              arcStartAltitude={0.002}
               arcEndLat={(d: ArcDatum) => d.endLat}
               arcEndLng={(d: ArcDatum) => d.endLng}
+              arcEndAltitude={0.002}
               arcColor={(d: ArcDatum) => [d.color, d.color]}
               arcAltitude={(d: ArcDatum) => 0.11 + d.width * 0.015}
               arcStroke={(d: ArcDatum) => d.width}
@@ -604,6 +679,41 @@ function GlobeHero({
               labelsTransitionDuration={0}
               atmosphereColor="#7dd3fc"
               atmosphereAltitude={0.18}
+              onGlobeReady={() => {
+                const globe = globeRef.current;
+                if (!globe) return;
+
+                const scene = globe.scene?.();
+                globe.renderer?.();
+                if (!scene) return;
+
+                if (hookedSceneRef.current && hookedSceneRef.current !== scene) {
+                  hookedSceneRef.current.onBeforeRender = previousSceneBeforeRenderRef.current ?? undefined;
+                }
+
+                if (hookedSceneRef.current !== scene) {
+                  previousSceneBeforeRenderRef.current =
+                    typeof scene.onBeforeRender === "function" ? scene.onBeforeRender : null;
+                  scene.onBeforeRender = (...args: unknown[]) => {
+                    previousSceneBeforeRenderRef.current?.call(scene, ...args);
+
+                    if (!needsArcStabilizeRef.current && stabilizeFramesRemainingRef.current <= 0) return;
+                    stabilizeArcScene(scene);
+
+                    if (stabilizeFramesRemainingRef.current > 0) {
+                      stabilizeFramesRemainingRef.current -= 1;
+                    }
+                    if (stabilizeFramesRemainingRef.current <= 0) {
+                      needsArcStabilizeRef.current = false;
+                    }
+                  };
+                  hookedSceneRef.current = scene;
+                }
+
+                needsArcStabilizeRef.current = true;
+                stabilizeFramesRemainingRef.current = Math.max(stabilizeFramesRemainingRef.current, 16);
+                stabilizeArcScene(scene);
+              }}
               onArcHover={(arc: ArcDatum | null) => {
                 const next = arc?.flow ?? null;
                 if (next) {
