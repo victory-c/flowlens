@@ -740,10 +740,12 @@ function GlobeHero({
               lineHoverPrecision={0.18}
               backgroundColor="rgba(0,0,0,0)"
               backgroundImageUrl="https://unpkg.com/three-globe/example/img/night-sky.png"
-              globeImageUrl="https://unpkg.com/three-globe/example/img/earth-day.jpg"
-              globeTileEngineUrl={(x: number, y: number, l: number) =>
-                `https://a.basemaps.cartocdn.com/light_all/${l}/${x}/${y}.png`
-              }
+              globeImageUrl="https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
+              bumpImageUrl="https://unpkg.com/three-globe/example/img/earth-topology.png"
+              globeTileEngineUrl={(x: number, y: number, l: number) => {
+                const subdomain = ["a", "b", "c"][(x + y) % 3];
+                return `https://${subdomain}.basemaps.cartocdn.com/rastertiles/voyager/${l}/${x}/${y}@2x.png`;
+              }}
               arcsData={arcs}
               arcStartLat={(d: ArcDatum) => d.startLat}
               arcStartLng={(d: ArcDatum) => d.startLng}
