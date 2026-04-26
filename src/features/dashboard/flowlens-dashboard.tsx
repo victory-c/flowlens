@@ -51,6 +51,24 @@ type CountryAnnotation = {
   weight: number;
 };
 
+type CountryPolygonFeature = {
+  type: "Feature";
+  properties?: {
+    NAME?: string;
+    name?: string;
+    [key: string]: unknown;
+  };
+  geometry?: {
+    type: string;
+    coordinates: unknown;
+  };
+};
+
+type CountryPolygonCollection = {
+  type: "FeatureCollection";
+  features?: CountryPolygonFeature[];
+};
+
 type GlobeControls = {
   enablePan: boolean;
   autoRotate: boolean;
@@ -482,6 +500,7 @@ function GlobeHero({
   const hookedSceneRef = useRef<ArcObjectLike | null>(null);
   const [activeFlow, setActiveFlow] = useState<GlobeFlow | null>(null);
   const [globeSize, setGlobeSize] = useState({ width: 1200, height: 760 });
+  const [countryPolygons, setCountryPolygons] = useState<CountryPolygonFeature[]>([]);
 
   const maxAmount = useMemo(
     () => rows.reduce((acc, row) => Math.max(acc, row.totalFunding), 0),
@@ -586,6 +605,23 @@ function GlobeHero({
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
+
+    fetch("/geo/ne_110m_admin_0_countries.geojson", { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error("Failed to load country polygons.");
+        return response.json() as Promise<CountryPolygonCollection>;
+      })
+      .then((payload) => {
+        if (controller.signal.aborted) return;
+        setCountryPolygons(Array.isArray(payload.features) ? payload.features : []);
+      })
+      .catch(() => {});
+
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
     needsArcStabilizeRef.current = true;
     stabilizeFramesRemainingRef.current = 12;
   }, [rows]);
@@ -655,8 +691,18 @@ function GlobeHero({
               rendererConfig={{ antialias: true, alpha: true }}
               lineHoverPrecision={0.18}
               backgroundColor="rgba(0,0,0,0)"
-              globeImageUrl="https://unpkg.com/three-globe/example/img/earth-night.jpg"
+              globeImageUrl="https://unpkg.com/three-globe/example/img/earth-water.png"
               bumpImageUrl="https://unpkg.com/three-globe/example/img/earth-topology.png"
+              polygonsData={countryPolygons}
+              polygonLabel={(d: CountryPolygonFeature) => {
+                const label = d.properties?.NAME ?? d.properties?.name;
+                return typeof label === "string" ? label : "";
+              }}
+              polygonAltitude={0.0015}
+              polygonCapColor={() => "rgba(148, 163, 184, 0.16)"}
+              polygonSideColor={() => "rgba(0, 0, 0, 0)"}
+              polygonStrokeColor={() => "rgba(203, 213, 225, 0.7)"}
+              polygonsTransitionDuration={0}
               arcsData={arcs}
               arcStartLat={(d: ArcDatum) => d.startLat}
               arcStartLng={(d: ArcDatum) => d.startLng}
