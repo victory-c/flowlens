@@ -43,6 +43,16 @@ type ArcDatum = {
   flow: GlobeFlow;
 };
 
+type CountryAnnotation = {
+  key: string;
+  country: string;
+  lat: number;
+  lng: number;
+  labelSize: number;
+  dotRadius: number;
+  color: string;
+};
+
 type GlobeControls = {
   enablePan: boolean;
   autoRotate: boolean;
@@ -405,8 +415,10 @@ function GlobeHero({
   onSelectFlow: (flow: GlobeFlow) => void;
 }) {
   const globeRef = useRef<GlobeHandle | null>(null);
+  const globeWrapRef = useRef<HTMLDivElement | null>(null);
   const resumeTimerRef = useRef<number | null>(null);
   const [activeFlow, setActiveFlow] = useState<GlobeFlow | null>(null);
+  const [globeSize, setGlobeSize] = useState({ width: 1200, height: 760 });
 
   const maxAmount = useMemo(
     () => rows.reduce((acc, row) => Math.max(acc, row.totalFunding), 0),
@@ -432,6 +444,85 @@ function GlobeHero({
       })),
     [maxAmount, rows]
   );
+
+  const countryAnnotations = useMemo<CountryAnnotation[]>(() => {
+    const totals = new Map<
+      string,
+      {
+        country: string;
+        lat: number;
+        lng: number;
+        amount: number;
+      }
+    >();
+
+    const accumulate = (
+      key: string | null,
+      country: string,
+      lat: number | null,
+      lng: number | null,
+      amount: number
+    ) => {
+      if (!key || lat === null || lng === null) return;
+      const existing = totals.get(key);
+      if (existing) {
+        existing.amount += amount;
+        return;
+      }
+      totals.set(key, { country, lat, lng, amount });
+    };
+
+    for (const row of rows) {
+      accumulate(row.donorIso3 ?? row.donorCountry, row.donorCountry, row.donorLat, row.donorLng, row.totalFunding);
+      accumulate(
+        row.recipientIso3 ?? row.recipientCountry,
+        row.recipientCountry,
+        row.recipientLat,
+        row.recipientLng,
+        row.totalFunding
+      );
+    }
+
+    const labelLimit = globeSize.width < 640 ? 8 : globeSize.width < 1100 ? 12 : 16;
+    const sorted = Array.from(totals.entries())
+      .sort((a, b) => b[1].amount - a[1].amount)
+      .slice(0, labelLimit);
+    const topAmount = sorted[0]?.[1].amount ?? 1;
+
+    return sorted.map(([key, item]) => {
+      const ratio = Math.max(0.2, Math.min(1, item.amount / topAmount));
+      return {
+        key,
+        country: item.country,
+        lat: item.lat,
+        lng: item.lng,
+        labelSize: 0.6 + ratio * 0.34,
+        dotRadius: 0.12 + ratio * 0.08,
+        color: "rgba(226, 232, 240, 0.9)"
+      };
+    });
+  }, [globeSize.width, rows]);
+
+  useEffect(() => {
+    const element = globeWrapRef.current;
+    if (!element) return;
+
+    const updateSize = () => {
+      const width = Math.max(320, Math.floor(element.clientWidth));
+      const height = Math.max(420, Math.floor(element.clientHeight));
+      setGlobeSize((previous) => {
+        if (previous.width === width && previous.height === height) return previous;
+        return { width, height };
+      });
+    };
+
+    updateSize();
+
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const globe = globeRef.current;
@@ -482,11 +573,14 @@ function GlobeHero({
         </div>
       ) : (
         <div className="relative">
-          <div className="h-[62vh] min-h-[420px] overflow-hidden rounded-2xl border border-slate-700/80 bg-[#030817]">
+          <div
+            ref={globeWrapRef}
+            className="flex h-[62vh] min-h-[420px] items-center justify-center overflow-hidden rounded-2xl border border-slate-700/80 bg-[#030817]"
+          >
             <Globe
               ref={globeRef}
-              width={1200}
-              height={760}
+              width={globeSize.width}
+              height={globeSize.height}
               backgroundColor="rgba(0,0,0,0)"
               globeImageUrl="https://unpkg.com/three-globe/example/img/earth-night.jpg"
               bumpImageUrl="https://unpkg.com/three-globe/example/img/earth-topology.png"
@@ -499,6 +593,15 @@ function GlobeHero({
               arcAltitude={(d: ArcDatum) => 0.11 + d.width * 0.015}
               arcStroke={(d: ArcDatum) => d.width}
               arcsTransitionDuration={0}
+              labelsData={countryAnnotations}
+              labelLat={(d: CountryAnnotation) => d.lat}
+              labelLng={(d: CountryAnnotation) => d.lng}
+              labelText={(d: CountryAnnotation) => d.country}
+              labelSize={(d: CountryAnnotation) => d.labelSize}
+              labelDotRadius={(d: CountryAnnotation) => d.dotRadius}
+              labelColor={(d: CountryAnnotation) => d.color}
+              labelAltitude={0.01}
+              labelsTransitionDuration={0}
               atmosphereColor="#7dd3fc"
               atmosphereAltitude={0.18}
               onArcHover={(arc: ArcDatum | null) => {
