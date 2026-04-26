@@ -4,7 +4,7 @@ import type {
   ProjectDetailResponse,
   ProjectPageResponse,
   ProjectPageQuery
-} from "@/server/analytics/contracts";
+} from "@/shared/contracts/dashboard-data";
 
 export function filtersToParams(filters: Partial<DashboardFilters>) {
   const params = new URLSearchParams();

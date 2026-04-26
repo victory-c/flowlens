@@ -2,6 +2,7 @@ OECD Dataset.xlsx - complete_p4d3_df.csv
 OECD Dataset.xlsx - Legenda.csv
 data/raw/**
 data/processed/**
+cleaned_data6/**
 node_modules/**
 .next/**
 coverage/**

@@ -6,7 +6,8 @@ const nextConfig: NextConfig = {
       "./OECD Dataset.xlsx - complete_p4d3_df.csv",
       "./OECD Dataset.xlsx - Legenda.csv",
       "./data/raw/**",
-      "./data/processed/**"
+      "./data/processed/**",
+      "./cleaned_data6/**"
     ]
   }
 };

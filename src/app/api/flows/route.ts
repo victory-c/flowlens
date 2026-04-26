@@ -1,7 +1,6 @@
-import { analyticsJson } from "@/server/analytics/http";
-import { parseFilters } from "@/server/analytics/query-params";
+import { NextResponse } from "next/server";
 import { rateLimit } from "@/server/analytics/rate-limit";
-import { getAnalyticsRepository } from "@/server/analytics/postgres-repository";
+import { getCleanedAnalyticsRepository } from "@/server/analytics/cleaned-repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,7 +8,10 @@ export const dynamic = "force-dynamic";
 export function GET(request: Request) {
   const limited = rateLimit(request);
   if (limited) return limited;
-  return analyticsJson(() =>
-    getAnalyticsRepository().getFlowSummary(parseFilters(new URL(request.url).searchParams))
-  );
+  return NextResponse.json(getCleanedAnalyticsRepository().getFlowUnavailable(), {
+    status: 410,
+    headers: {
+      "Cache-Control": "public, s-maxage=86400, stale-while-revalidate=604800"
+    }
+  });
 }

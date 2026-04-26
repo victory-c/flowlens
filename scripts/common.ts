@@ -1,6 +1,7 @@
 import { createReadStream } from "node:fs";
 import { parse } from "csv-parse";
 import pg from "pg";
+import "./load-env";
 
 export const CSV_PATH =
   process.env.FLOWLENS_CSV_PATH ?? "./OECD Dataset.xlsx - complete_p4d3_df.csv";
