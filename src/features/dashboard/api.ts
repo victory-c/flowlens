@@ -1,11 +1,12 @@
 import type {
   CauseSummaryRow,
-  CountrySummaryRow,
+  CountrySummaryResponse,
   DashboardDataResponse,
   DashboardDataRequest,
   DashboardFilters,
+  DashboardSummaryResponse,
   FilterOptionsResponse,
-  FlowSummaryRow,
+  FlowSummaryResponse,
   GlobeFlowsResponse,
   OverviewMetrics,
   ProjectDetailResponse,
@@ -16,13 +17,14 @@ import type {
 type ViewResponseMap = {
   globe_flows: GlobeFlowsResponse;
   overview_metrics: OverviewMetrics;
-  country_summary: CountrySummaryRow[];
-  flow_summary: FlowSummaryRow[];
+  country_summary: CountrySummaryResponse;
+  flow_summary: FlowSummaryResponse;
   cause_summary: CauseSummaryRow[];
   yearly_summary: YearlySummaryRow[];
   raw_table: RawTableResponse;
   filter_options: FilterOptionsResponse;
   project_detail: ProjectDetailResponse;
+  dashboard_summary: DashboardSummaryResponse;
 };
 
 function paramsFromFilters(filters: Partial<DashboardFilters>) {
@@ -88,21 +90,35 @@ export function getOverviewMetrics(filters: DashboardFilters) {
   return getDashboardView("overview_metrics", { filters });
 }
 
-export function getCountrySummary(filters: DashboardFilters) {
+export function getCountrySummary(
+  filters: DashboardFilters,
+  page = 1,
+  pageSize = 25,
+  sortBy: DashboardDataRequest["sortBy"] = "amount",
+  sortDir: DashboardDataRequest["sortDir"] = "desc"
+) {
   return getDashboardView("country_summary", {
     filters,
-    pageSize: 25,
-    sortBy: "amount",
-    sortDir: "desc"
+    page,
+    pageSize,
+    sortBy,
+    sortDir
   });
 }
 
-export function getFlowSummary(filters: DashboardFilters) {
+export function getFlowSummary(
+  filters: DashboardFilters,
+  page = 1,
+  pageSize = 25,
+  sortBy: DashboardDataRequest["sortBy"] = "amount",
+  sortDir: DashboardDataRequest["sortDir"] = "desc"
+) {
   return getDashboardView("flow_summary", {
     filters,
-    pageSize: 25,
-    sortBy: "amount",
-    sortDir: "desc"
+    page,
+    pageSize,
+    sortBy,
+    sortDir
   });
 }
 
@@ -145,6 +161,13 @@ export function getProjectDetail(projectKey: string, filters: DashboardFilters) 
   return getDashboardView("project_detail", {
     filters,
     projectKey,
+    pageSize: 1
+  });
+}
+
+export function getDashboardSummary(filters: DashboardFilters) {
+  return getDashboardView("dashboard_summary", {
+    filters,
     pageSize: 1
   });
 }

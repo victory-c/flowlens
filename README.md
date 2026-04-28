@@ -61,8 +61,35 @@ Do not deploy the raw CSV to Vercel. The Next config excludes the local CSV name
 - `GET /api/filter-options`
 - `GET /api/insights`
 - `GET /api/health`
+- `GET /api/v1/dashboard-data`
 
 The frontend never reads Supabase raw tables directly. It talks to route handlers, which validate filters with Zod and use a repository interface built around product concepts.
+
+### API Query Examples
+
+`Cross-border-only globe flows (default):`
+
+```bash
+curl "http://localhost:3000/api/v1/dashboard-data?view=globe_flows"
+```
+
+`Include domestic flows:`
+
+```bash
+curl "http://localhost:3000/api/v1/dashboard-data?view=flow_summary&includeDomestic=true"
+```
+
+`Search and sort flow table server-side:`
+
+```bash
+curl "http://localhost:3000/api/v1/dashboard-data?view=flow_summary&tableQ=india&sortBy=amount&sortDir=desc&page=1&pageSize=25"
+```
+
+`Raw/project text search (project_title, project_key, organization):`
+
+```bash
+curl "http://localhost:3000/api/v1/dashboard-data?view=raw_table&q=vaccine&page=1&pageSize=25"
+```
 
 ## Demo Acceptance Path
 
@@ -80,7 +107,15 @@ A judge should be able to complete this path in under 90 seconds:
 ## Data Notes
 
 - Amounts are USD millions, deflated to 2023 constant values.
+- Annual years are `2020`, `2021`, `2022`, `2023`; `2020-2023` is an aggregate label.
 - Project View groups sector rows by `project_key`.
 - Selected-scope amount reflects current filters; project-total amount reflects all raw rows under the project key.
 - Regional, unspecified, and unmapped recipient labels are not plotted as exact country flows.
 - Blank marker values mean not reported or not screened, not necessarily irrelevant.
+
+## Competition Notes
+
+- Methodology and limitations: `docs/methodology.md`
+- Judge pitch script: `docs/judge-pitch.md`
+- Demo checklist: `docs/judge-demo-checklist.md`
+- Teammate submission handoff: `docs/submission-handoff-2026-04-27.md`

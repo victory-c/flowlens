@@ -3,8 +3,18 @@ import { cached } from "./cache";
 import { canonicalCleanedKey } from "./cleaned-query-params";
 import { getCountryMetadataMap, resolveCountryMeta } from "./country-metadata";
 import {
+  buildFlowFilteredCte,
+  normalizeRecipientCountryLabel,
+  normalizeRegionLabel,
+  recipientCaveats,
+  recipientGeoTypeFromLabel,
+  regionFilterValues,
+  summarizedFlowType,
+  summarizedRecipientGeoType
+} from "./cleaned-flow-utils";
+import {
   AMOUNT_UNIT,
-  type CountrySummaryRow,
+  type CountrySummaryResponse,
   DATA_SOURCE,
   DATA_VERSION,
   type Cause,
@@ -17,7 +27,7 @@ import {
   type DashboardWarning,
   type FilterOption,
   type FilterOptionsResponse,
-  type FlowSummaryRow,
+  type FlowSummaryResponse,
   type GlobeFlow,
   type GlobeFlowsResponse,
   type InsightCard,
@@ -75,30 +85,29 @@ function sortedYearLabels(values: unknown) {
   });
 }
 
-function summarizedFlowType(values: unknown) {
-  if (!Array.isArray(values)) return "Cross-border";
-  const flowTypes = unique(values.map(String).filter(Boolean));
-  if (flowTypes.length === 0) return "Cross-border";
-  if (flowTypes.length === 1) return flowTypes[0];
-  return "Mixed";
-}
-
-function hasFilter(filters: DashboardFilters, key: keyof DashboardFilters) {
-  return Boolean(filters[key]);
-}
-
-function hasFlowFilters(filters: DashboardFilters) {
-  return ["year", "donorCountry", "recipientCountry", "region", "minAmount"].some((key) =>
-    hasFilter(filters, key as keyof DashboardFilters)
-  );
-}
-
 function causeColumn(cause: Cause) {
   return CAUSE_CONFIG.find((item) => item.label === cause)?.column;
 }
 
 function causesFromRow(row: PgRow): Cause[] {
   return CAUSE_CONFIG.filter((item) => Boolean(row[item.column])).map((item) => item.label);
+}
+
+function continentFromCoordinates(lat: number, lng: number) {
+  if (lat <= -58) return "Antarctica";
+  if (lng < -20) return lat >= 12 ? "North America" : "South America";
+  if (lat >= -36 && lat <= 38 && lng >= -25 && lng <= 63) return "Africa";
+  if (lat >= 35 && lng >= -12 && lng <= 60) return "Europe";
+  if (lat < -8 && lng >= 105) return "Oceania";
+  return "Asia";
+}
+
+function donorContinentLabel(country: {
+  latitude: number | null;
+  longitude: number | null;
+}) {
+  if (country.latitude === null || country.longitude === null) return "Unmapped";
+  return continentFromCoordinates(country.latitude, country.longitude);
 }
 
 function baseWarnings(filters: DashboardFilters): DashboardWarning[] {
@@ -116,7 +125,7 @@ function baseWarnings(filters: DashboardFilters): DashboardWarning[] {
   if (filters.year === "2020-2023") {
     warnings.push({
       code: "AGGREGATE_YEAR",
-      message: "2020-2023 is an aggregate/NDA-restricted label, not a continuous trend year."
+      message: "2020-2023 is a combined reporting period (NDA-restricted), not a single continuous year."
     });
   }
 
@@ -154,7 +163,11 @@ function organizationValue(filters: DashboardFilters) {
   return filters.organization ?? filters.donor;
 }
 
-function mainFilteredCte(filters: DashboardFilters, existingParams: unknown[] = []) {
+function mainFilteredCte(
+  filters: DashboardFilters,
+  existingParams: unknown[] = [],
+  options: { includeTextSearch?: boolean } = {}
+) {
   const params = [...existingParams];
   const where = ["1 = 1"];
   const unsupported: string[] = [];
@@ -166,12 +179,13 @@ function mainFilteredCte(filters: DashboardFilters, existingParams: unknown[] = 
   };
 
   addTextFilter("year_label", filters.year);
-  addTextFilter("region", filters.region);
   addTextFilter("recipient_country", filters.recipientCountry);
   addTextFilter("donor", organizationValue(filters));
   addTextFilter("sector_name", filters.sector);
-
-  if (filters.donorCountry) unsupported.push("donorCountry");
+  if (filters.region) {
+    params.push(regionFilterValues(filters.region));
+    where.push(`region = ANY($${params.length}::text[])`);
+  }
 
   if (filters.cause) {
     const column = causeColumn(filters.cause);
@@ -187,10 +201,14 @@ function mainFilteredCte(filters: DashboardFilters, existingParams: unknown[] = 
     where.push("amount_usd >= 14.8");
   }
 
-  if (filters.q) {
+  if (options.includeTextSearch && filters.q) {
     params.push(`%${filters.q.toLowerCase()}%`);
     where.push(`search_text LIKE $${params.length}`);
   }
+
+  if (filters.donorCountry) unsupported.push("donorCountry");
+  if (filters.includeDomestic) unsupported.push("includeDomestic");
+  if (filters.tableQ) unsupported.push("tableQ");
 
   return {
     params,
@@ -222,55 +240,6 @@ function mainFilteredCte(filters: DashboardFilters, existingParams: unknown[] = 
   };
 }
 
-function flowFilteredCte(filters: DashboardFilters, existingParams: unknown[] = []) {
-  const params = [...existingParams];
-  const where = ["1 = 1"];
-  const unsupported: string[] = [];
-
-  const addTextFilter = (column: string, value: string | undefined) => {
-    if (!value) return;
-    params.push(value);
-    where.push(`${column} = $${params.length}`);
-  };
-
-  addTextFilter("year_label", filters.year);
-  addTextFilter("donor_country", filters.donorCountry);
-  addTextFilter("recipient_country", filters.recipientCountry);
-  addTextFilter("region", filters.region);
-
-  if (filters.minAmount !== undefined) {
-    params.push(filters.minAmount);
-    where.push(`total_funding >= $${params.length}`);
-  }
-
-  if (filters.cause) unsupported.push("cause");
-  if (organizationValue(filters)) unsupported.push("organization");
-  if (filters.q) unsupported.push("q");
-  if (filters.sector) unsupported.push("sector");
-  if (filters.outlierOnly) unsupported.push("outlierOnly");
-
-  return {
-    params,
-    unsupported,
-    cte: `
-      WITH flow_filtered AS (
-        SELECT
-          year_label,
-          year_int,
-          donor_country,
-          region,
-          recipient_country,
-          flow_type,
-          total_funding,
-          unique_projects,
-          exact_geo_flag,
-          recipient_geo_type
-        FROM analytics_clean.flow_summary
-        WHERE ${where.join("\n          AND ")}
-      )
-    `
-  };
-}
 
 function listSortClause(sortBy: DashboardDataRequest["sortBy"], sortDir: DashboardDataRequest["sortDir"]) {
   const direction = sortDir === "asc" ? "ASC" : "DESC";
@@ -320,8 +289,10 @@ function filtersFromRequest(request: DashboardDataRequest): DashboardFilters {
     donor,
     sector,
     minAmount,
+    tableQ,
     q,
     viewMode,
+    includeDomestic,
     outlierOnly
   } = request;
   return {
@@ -334,8 +305,10 @@ function filtersFromRequest(request: DashboardDataRequest): DashboardFilters {
     donor,
     sector,
     minAmount,
+    tableQ,
     q,
     viewMode,
+    includeDomestic,
     outlierOnly
   };
 }
@@ -346,7 +319,7 @@ function rawRow(row: PgRow): RawTableRow {
     yearLabel: String(row.year_label),
     organization: String(row.donor),
     recipientCountry: String(row.recipient_country),
-    region: String(row.region),
+    region: normalizeRegionLabel(String(row.region ?? "Unknown")),
     sectorName: String(row.sector_name),
     amountUsd: num(row.amount_usd),
     projectTitle: str(row.project_title),
@@ -402,10 +375,9 @@ export class CleanedAnalyticsRepository {
   async getGlobeFlows(filters: DashboardFilters): Promise<GlobeFlowsResponse> {
     const key = `cleaned-globe-flows:${canonicalCleanedKey(filters)}`;
     return cached(key, CACHE_DAY, async () => {
-      const { cte, params, unsupported } = flowFilteredCte(filters);
-      const limit = hasFlowFilters(filters) ? 500 : 200;
-      const fetchLimit = Math.min(limit * 5, 2500);
-      params.push(fetchLimit);
+      const { cte, params, unsupported } = buildFlowFilteredCte(filters, {
+        organizationFilterActive: Boolean(organizationValue(filters))
+      });
 
       const rows = await query<PgRow>(
         `${cte}
@@ -422,8 +394,7 @@ export class CleanedAnalyticsRepository {
         FROM flow_filtered
         WHERE exact_geo_flag = true
         GROUP BY donor_country, recipient_country
-        ORDER BY total_funding DESC
-        LIMIT $${params.length}`,
+        ORDER BY total_funding DESC`,
         params
       );
 
@@ -443,7 +414,7 @@ export class CleanedAnalyticsRepository {
         .map(({ donor, recipient, row }): GlobeFlow => ({
           donorCountry: donor.displayName,
           recipientCountry: recipient.displayName,
-          region: String(row.region ?? "Unknown"),
+          region: normalizeRegionLabel(String(row.region ?? "Unknown")),
           yearLabels: sortedYearLabels(row.year_labels),
           flowType: summarizedFlowType(row.flow_types),
           totalFunding: num(row.total_funding),
@@ -460,13 +431,11 @@ export class CleanedAnalyticsRepository {
           exactGeo: true
         }));
 
-      const sliced = mapped.slice(0, limit);
-
       return {
-        rows: sliced,
+        rows: mapped,
         totalRows: mapped.length,
-        limit,
-        truncated: mapped.length > limit,
+        limit: mapped.length,
+        truncated: false,
         unsupportedFilters: unique(unsupported)
       };
     });
@@ -489,7 +458,9 @@ export class CleanedAnalyticsRepository {
         params
       );
 
-      const { cte: flowCte, params: flowParams } = flowFilteredCte(filters);
+      const { cte: flowCte, params: flowParams } = buildFlowFilteredCte(filters, {
+        organizationFilterActive: Boolean(organizationValue(filters))
+      });
       const [flowRow] = await query<PgRow>(
         `${flowCte}
         SELECT count(DISTINCT donor_country)::int AS donor_countries
@@ -509,23 +480,42 @@ export class CleanedAnalyticsRepository {
     });
   }
 
-  async getCountrySummary(request: DashboardDataRequest): Promise<CountrySummaryRow[]> {
+  async getCountrySummary(request: DashboardDataRequest): Promise<CountrySummaryResponse> {
     const filters = filtersFromRequest(request);
     const key = `cleaned-country-summary:${canonicalCleanedKey(request)}`;
 
     return cached(key, CACHE_DAY, async () => {
-      const { cte, params } = mainFilteredCte(filters);
+      const { cte, params } = mainFilteredCte(filters, [], { includeTextSearch: true });
+      const searchPattern = filters.tableQ ? `%${filters.tableQ.toLowerCase()}%` : null;
+      params.push(searchPattern);
       params.push(request.pageSize, (request.page - 1) * request.pageSize);
 
       const rows = await query<PgRow>(
         `${cte}
+        ,
+        grouped AS (
+          SELECT
+            recipient_country,
+            min(region) AS region,
+            coalesce(sum(amount_usd), 0)::float AS total_funding,
+            count(DISTINCT project_key)::int AS unique_projects,
+            bool_or(year_int IS NULL) AS has_aggregate_year
+          FROM filtered
+          GROUP BY recipient_country
+        ),
+        searched AS (
+          SELECT *
+          FROM grouped
+          WHERE ($${params.length - 2}::text IS NULL OR lower(recipient_country) LIKE $${params.length - 2})
+        ),
+        counts AS (
+          SELECT count(*)::int AS total_rows FROM searched
+        )
         SELECT
-          recipient_country,
-          min(region) AS region,
-          coalesce(sum(amount_usd), 0)::float AS total_funding,
-          count(DISTINCT project_key)::int AS unique_projects
-        FROM filtered
-        GROUP BY recipient_country
+          searched.*,
+          counts.total_rows
+        FROM searched
+        CROSS JOIN counts
         ORDER BY ${listSortClause(request.sortBy, request.sortDir)}, recipient_country ASC
         LIMIT $${params.length - 1} OFFSET $${params.length}`,
         params
@@ -533,39 +523,78 @@ export class CleanedAnalyticsRepository {
 
       const metadata = await getCountryMetadataMap();
 
-      return rows.map((row) => {
-        const country = resolveCountryMeta(String(row.recipient_country), metadata);
-        return {
-          country: country.displayName,
-          region: String(row.region ?? "Unknown"),
-          totalFunding: num(row.total_funding),
-          uniqueProjects: num(row.unique_projects),
-          iso2: country.iso2,
-          iso3: country.iso3
-        };
-      });
+      return {
+        rows: rows.map((row) => {
+          const rawCountry = String(row.recipient_country);
+          const normalizedRecipient = normalizeRecipientCountryLabel(rawCountry);
+          const recipientGeoType = recipientGeoTypeFromLabel(normalizedRecipient);
+          const hasAggregateYear = Boolean(row.has_aggregate_year);
+          const caveats = recipientCaveats(normalizedRecipient, { hasAggregateYear });
+          const country = resolveCountryMeta(normalizedRecipient, metadata);
+          return {
+            country: country.displayName,
+            region: normalizeRegionLabel(String(row.region ?? "Unknown")),
+            totalFunding: num(row.total_funding),
+            uniqueProjects: num(row.unique_projects),
+            iso2: country.iso2,
+            iso3: country.iso3,
+            recipientGeoType,
+            caveats
+          };
+        }),
+        page: request.page,
+        pageSize: request.pageSize,
+        totalRows: num(rows[0]?.total_rows)
+      };
     });
   }
 
-  async getFlowSummary(request: DashboardDataRequest): Promise<FlowSummaryRow[]> {
+  async getFlowSummary(request: DashboardDataRequest): Promise<FlowSummaryResponse> {
     const filters = filtersFromRequest(request);
     const key = `cleaned-flow-summary:${canonicalCleanedKey(request)}`;
 
     return cached(key, CACHE_DAY, async () => {
-      const { cte, params } = flowFilteredCte(filters);
+      const { cte, params } = buildFlowFilteredCte(filters, {
+        organizationFilterActive: Boolean(organizationValue(filters))
+      });
+      const searchPattern = filters.tableQ ? `%${filters.tableQ.toLowerCase()}%` : null;
+      params.push(searchPattern);
       params.push(request.pageSize, (request.page - 1) * request.pageSize);
 
       const rows = await query<PgRow>(
         `${cte}
+        ,
+        grouped AS (
+          SELECT
+            donor_country,
+            recipient_country,
+            min(region) AS region,
+            coalesce(sum(total_funding), 0)::float AS total_funding,
+            coalesce(sum(unique_projects), 0)::int AS unique_projects,
+            array_agg(DISTINCT year_label ORDER BY year_label) AS year_labels,
+            array_agg(DISTINCT flow_type) AS flow_types,
+            array_agg(DISTINCT recipient_geo_type) AS recipient_geo_types,
+            bool_or(year_int IS NULL) AS has_aggregate_year
+          FROM flow_filtered
+          GROUP BY donor_country, recipient_country
+        ),
+        searched AS (
+          SELECT *
+          FROM grouped
+          WHERE (
+            $${params.length - 2}::text IS NULL OR
+            lower(donor_country) LIKE $${params.length - 2} OR
+            lower(recipient_country) LIKE $${params.length - 2}
+          )
+        ),
+        counts AS (
+          SELECT count(*)::int AS total_rows FROM searched
+        )
         SELECT
-          donor_country,
-          recipient_country,
-          min(region) AS region,
-          coalesce(sum(total_funding), 0)::float AS total_funding,
-          coalesce(sum(unique_projects), 0)::int AS unique_projects,
-          array_agg(DISTINCT year_label ORDER BY year_label) AS year_labels
-        FROM flow_filtered
-        GROUP BY donor_country, recipient_country
+          searched.*,
+          counts.total_rows
+        FROM searched
+        CROSS JOIN counts
         ORDER BY ${listSortClause(request.sortBy, request.sortDir)}, donor_country ASC, recipient_country ASC
         LIMIT $${params.length - 1} OFFSET $${params.length}`,
         params
@@ -573,22 +602,37 @@ export class CleanedAnalyticsRepository {
 
       const metadata = await getCountryMetadataMap();
 
-      return rows.map((row) => {
-        const donor = resolveCountryMeta(String(row.donor_country), metadata);
-        const recipient = resolveCountryMeta(String(row.recipient_country), metadata);
-        return {
-          donorCountry: donor.displayName,
-          recipientCountry: recipient.displayName,
-          region: String(row.region ?? "Unknown"),
-          totalFunding: num(row.total_funding),
-          uniqueProjects: num(row.unique_projects),
-          yearLabels: Array.isArray(row.year_labels) ? row.year_labels.map(String) : [],
-          donorIso2: donor.iso2,
-          donorIso3: donor.iso3,
-          recipientIso2: recipient.iso2,
-          recipientIso3: recipient.iso3
-        };
-      });
+      return {
+        rows: rows.map((row) => {
+          const donor = resolveCountryMeta(String(row.donor_country), metadata);
+          const normalizedRecipient = normalizeRecipientCountryLabel(String(row.recipient_country));
+          const recipient = resolveCountryMeta(normalizedRecipient, metadata);
+          const flowType = summarizedFlowType(row.flow_types);
+          const recipientGeoType = summarizedRecipientGeoType(row.recipient_geo_types);
+          const caveats = recipientCaveats(normalizedRecipient, {
+            hasAggregateYear: Boolean(row.has_aggregate_year),
+            flowType
+          });
+          return {
+            donorCountry: donor.displayName,
+            recipientCountry: recipient.displayName,
+            region: normalizeRegionLabel(String(row.region ?? "Unknown")),
+            totalFunding: num(row.total_funding),
+            uniqueProjects: num(row.unique_projects),
+            yearLabels: Array.isArray(row.year_labels) ? row.year_labels.map(String) : [],
+            flowType,
+            recipientGeoType,
+            donorIso2: donor.iso2,
+            donorIso3: donor.iso3,
+            recipientIso2: recipient.iso2,
+            recipientIso3: recipient.iso3,
+            caveats
+          };
+        }),
+        page: request.page,
+        pageSize: request.pageSize,
+        totalRows: num(rows[0]?.total_rows)
+      };
     });
   }
 
@@ -783,7 +827,7 @@ export class CleanedAnalyticsRepository {
         title: str(summary.title),
         organization: String(summary.organization),
         recipientCountry: String(summary.recipient_country),
-        region: String(summary.region),
+        region: normalizeRegionLabel(String(summary.region ?? "Unknown")),
         years: Array.isArray(summary.years) ? summary.years.map(String) : [],
         totalFunding: num(summary.total_funding),
         selectedScopeFunding: num(summary.selected_scope_funding),
@@ -830,7 +874,9 @@ export class CleanedAnalyticsRepository {
         optionQuery("sector_name", 80)
       ]);
 
-      const { cte: flowCte, params: flowParams } = flowFilteredCte(filters);
+      const { cte: flowCte, params: flowParams } = buildFlowFilteredCte(filters, {
+        organizationFilterActive: Boolean(organizationValue(filters))
+      });
       const donorCountries = await query<PgRow>(
         `${flowCte}
         SELECT donor_country AS label, donor_country AS value, count(*)::int AS count
@@ -848,11 +894,21 @@ export class CleanedAnalyticsRepository {
         isAggregate: row.is_aggregate === undefined ? undefined : Boolean(row.is_aggregate)
       });
 
+      const normalizedRegionOptions = Array.from(
+        regions.reduce<Map<string, number>>((map, row) => {
+          const canonical = normalizeRegionLabel(String(row.label ?? row.value ?? "Unknown"));
+          map.set(canonical, (map.get(canonical) ?? 0) + num(row.count));
+          return map;
+        }, new Map())
+      )
+        .map(([label, count]) => ({ label, value: label, count }))
+        .sort((a, b) => (b.count ?? 0) - (a.count ?? 0) || a.label.localeCompare(b.label));
+
       return {
         years: years.map(mapOption),
         donorCountries: donorCountries.map(mapOption),
         organizations: organizations.map(mapOption),
-        regions: regions.map(mapOption),
+        regions: normalizedRegionOptions,
         recipientCountries: recipientCountries.map(mapOption),
         sectors: sectors.map(mapOption),
         causes: CAUSE_CONFIG.map((item) => ({ label: item.label, value: item.label }))
@@ -926,11 +982,18 @@ export class CleanedAnalyticsRepository {
       SELECT recipient_country AS label, coalesce(sum(amount_usd), 0)::float AS value
       FROM filtered
       GROUP BY recipient_country
-      ORDER BY value DESC
-      LIMIT 10`,
+      ORDER BY value DESC`,
       params
     );
-    return rows.map((row) => ({ label: String(row.label), value: num(row.value) }));
+    const grouped = new Map<string, number>();
+    for (const row of rows) {
+      const normalized = normalizeRecipientCountryLabel(String(row.label));
+      grouped.set(normalized, (grouped.get(normalized) ?? 0) + num(row.value));
+    }
+    return Array.from(grouped.entries())
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
   }
 
   private async getTopSectors(filters: DashboardFilters) {
@@ -947,11 +1010,143 @@ export class CleanedAnalyticsRepository {
     return rows.map((row) => ({ label: String(row.label), value: num(row.value) }));
   }
 
+  private async getCauseBreakdownByOrganization(filters: DashboardFilters) {
+    const { cte, params } = mainFilteredCte(filters);
+    const causeQueries = CAUSE_CONFIG.map(
+      (item) => `
+        SELECT
+          '${item.label}'::text AS cause,
+          donor AS label,
+          coalesce(sum(amount_usd), 0)::float AS value,
+          count(DISTINCT project_key)::int AS unique_projects
+        FROM filtered
+        WHERE ${item.column} = true
+        GROUP BY donor
+      `
+    );
+
+    const rows = await query<PgRow>(
+      `${cte},
+      cause_rows AS (
+        ${causeQueries.join("\n        UNION ALL\n")}
+      )
+      SELECT cause, label, value, unique_projects
+      FROM cause_rows
+      ORDER BY cause ASC, value DESC, label ASC`,
+      params
+    );
+
+    return rows.map((row) => ({
+      cause: String(row.cause) as Cause,
+      label: String(row.label),
+      value: num(row.value),
+      uniqueProjects: num(row.unique_projects)
+    }));
+  }
+
+  private async getCauseBreakdownBySector(filters: DashboardFilters) {
+    const { cte, params } = mainFilteredCte(filters);
+    const causeQueries = CAUSE_CONFIG.map(
+      (item) => `
+        SELECT
+          '${item.label}'::text AS cause,
+          sector_name AS label,
+          coalesce(sum(amount_usd), 0)::float AS value,
+          count(DISTINCT project_key)::int AS unique_projects
+        FROM filtered
+        WHERE ${item.column} = true
+        GROUP BY sector_name
+      `
+    );
+
+    const rows = await query<PgRow>(
+      `${cte},
+      cause_rows AS (
+        ${causeQueries.join("\n        UNION ALL\n")}
+      )
+      SELECT cause, label, value, unique_projects
+      FROM cause_rows
+      ORDER BY cause ASC, value DESC, label ASC`,
+      params
+    );
+
+    return rows.map((row) => ({
+      cause: String(row.cause) as Cause,
+      label: String(row.label),
+      value: num(row.value),
+      uniqueProjects: num(row.unique_projects)
+    }));
+  }
+
+  private async getCauseBreakdownByDonorContinent(filters: DashboardFilters, causeRows: CauseSummaryRow[]) {
+    const yearlyCauseTotals = new Map<string, Map<Cause, number>>();
+    const yearlyCauseSum = new Map<string, number>();
+
+    for (const row of causeRows) {
+      const yearLabel = row.yearLabel;
+      const map = yearlyCauseTotals.get(yearLabel) ?? new Map<Cause, number>();
+      map.set(row.cause, (map.get(row.cause) ?? 0) + row.totalFunding);
+      yearlyCauseTotals.set(yearLabel, map);
+      yearlyCauseSum.set(yearLabel, (yearlyCauseSum.get(yearLabel) ?? 0) + row.totalFunding);
+    }
+
+    const { cte, params } = buildFlowFilteredCte(filters, {
+      organizationFilterActive: Boolean(organizationValue(filters))
+    });
+    const rows = await query<PgRow>(
+      `${cte}
+      SELECT year_label, donor_country, coalesce(sum(total_funding), 0)::float AS total_funding
+      FROM flow_filtered
+      GROUP BY year_label, donor_country`,
+      params
+    );
+
+    const metadata = await getCountryMetadataMap();
+    const grouped = new Map<string, number>();
+
+    for (const row of rows) {
+      const yearLabel = String(row.year_label ?? "");
+      const causeByYear = yearlyCauseTotals.get(yearLabel);
+      const yearTotal = yearlyCauseSum.get(yearLabel) ?? 0;
+      if (!causeByYear || yearTotal <= 0) continue;
+
+      const donor = resolveCountryMeta(String(row.donor_country), metadata);
+      const continent = donorContinentLabel(donor);
+      const funding = num(row.total_funding);
+      if (funding <= 0) continue;
+
+      for (const [cause, causeTotal] of causeByYear.entries()) {
+        if (causeTotal <= 0) continue;
+        const weight = causeTotal / yearTotal;
+        const key = `${cause}__${continent}`;
+        grouped.set(key, (grouped.get(key) ?? 0) + funding * weight);
+      }
+    }
+
+    return Array.from(grouped.entries())
+      .map(([key, value]) => {
+        const [cause, label] = key.split("__");
+        return { cause: cause as Cause, label, value };
+      })
+      .sort((a, b) => a.cause.localeCompare(b.cause) || b.value - a.value || a.label.localeCompare(b.label));
+  }
+
   async getDashboardSummary(filters: DashboardFilters): Promise<DashboardSummaryResponse> {
     const key = `cleaned-dashboard-summary:${canonicalCleanedKey(filters)}`;
 
     return cached(key, CACHE_DAY, async () => {
-      const [kpis, yearly, organizations, recipients, sectors, causeRows, filterOptions, insights] =
+      const [
+        kpis,
+        yearly,
+        organizations,
+        recipients,
+        sectors,
+        causeRows,
+        filterOptions,
+        insights,
+        causeByOrganization,
+        causeBySector
+      ] =
         await Promise.all([
           this.getOverviewMetrics(filters),
           this.getYearlySummary({
@@ -976,8 +1171,12 @@ export class CleanedAnalyticsRepository {
             sortDir: "desc"
           }),
           this.getFilterOptions(filters),
-          this.getInsights(filters)
+          this.getInsights(filters),
+          this.getCauseBreakdownByOrganization(filters),
+          this.getCauseBreakdownBySector(filters)
         ]);
+
+      const causeByDonorContinent = await this.getCauseBreakdownByDonorContinent(filters, causeRows);
 
       const groupedCause = new Map<string, number>();
       for (const row of causeRows) {
@@ -995,7 +1194,10 @@ export class CleanedAnalyticsRepository {
         topSectors: sectors,
         causeMarkers: Array.from(groupedCause.entries())
           .map(([label, value]) => ({ label, value }))
-          .sort((a, b) => b.value - a.value)
+          .sort((a, b) => b.value - a.value),
+        causeByDonorContinent,
+        causeByOrganization,
+        causeBySector
       };
 
       return {
@@ -1020,3 +1222,10 @@ export function getCleanedAnalyticsRepository() {
   cleanedRepository ??= new CleanedAnalyticsRepository();
   return cleanedRepository;
 }
+
+export const __testing = {
+  buildFlowFilteredCte,
+  recipientCaveats,
+  recipientGeoTypeFromLabel,
+  summarizedRecipientGeoType
+};

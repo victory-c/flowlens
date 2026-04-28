@@ -17,6 +17,8 @@ function paramsObject(searchParams: URLSearchParams) {
   if (!values.recipientCountry && values.recipient) values.recipientCountry = values.recipient;
   if (!values.recipientCountry && values.recipient_country) values.recipientCountry = values.recipient_country;
   if (!values.minAmount && values.amountMin) values.minAmount = values.amountMin;
+  if (!values.tableQ && values.table_q) values.tableQ = values.table_q;
+  if (!values.includeDomestic && values.include_domestic) values.includeDomestic = values.include_domestic;
   if (!values.q && values.keyword) values.q = values.keyword;
   if (values.viewMode === "raw") values.viewMode = "row";
 

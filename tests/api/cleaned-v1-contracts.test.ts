@@ -22,6 +22,7 @@ describe("cleaned v1 dashboard contracts", () => {
     expect(parsed.sortBy).toBe("amount");
     expect(parsed.sortDir).toBe("desc");
     expect(parsed.viewMode).toBe("project");
+    expect(parsed.includeDomestic).toBe(false);
     expect(parsed.outlierOnly).toBe(false);
   });
 
@@ -32,6 +33,8 @@ describe("cleaned v1 dashboard contracts", () => {
         donor: "Gates Foundation",
         recipient: "Kenya",
         amountMin: "0.25",
+        table_q: "ethiopia",
+        include_domestic: "true",
         keyword: "health"
       })
     );
@@ -39,7 +42,28 @@ describe("cleaned v1 dashboard contracts", () => {
     expect(parsed.organization).toBe("Gates Foundation");
     expect(parsed.recipientCountry).toBe("Kenya");
     expect(parsed.minAmount).toBe(0.25);
+    expect(parsed.tableQ).toBe("ethiopia");
+    expect(parsed.includeDomestic).toBe(true);
     expect(parsed.q).toBe("health");
+  });
+
+  it("keeps includeDomestic false when query params explicitly set false", () => {
+    const canonical = parseDashboardDataRequest(
+      new URLSearchParams({
+        view: "overview_metrics",
+        includeDomestic: "false"
+      })
+    );
+
+    const alias = parseDashboardDataRequest(
+      new URLSearchParams({
+        view: "overview_metrics",
+        include_domestic: "false"
+      })
+    );
+
+    expect(canonical.includeDomestic).toBe(false);
+    expect(alias.includeDomestic).toBe(false);
   });
 
   it("keeps canonical cache keys stable regardless of property order", () => {

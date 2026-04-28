@@ -4,6 +4,7 @@ import { parse as parseCsv } from "csv-parse/sync";
 import countries from "i18n-iso-countries";
 import en from "i18n-iso-countries/langs/en.json";
 import type { CountryMeta } from "@/shared/contracts/dashboard-data";
+import { normalizeCountryLabel } from "./country-normalization";
 import { query } from "./db";
 
 countries.registerLocale(en);
@@ -18,26 +19,6 @@ type CountryLookupRow = {
   lng: number | null;
 };
 
-const COUNTRY_ALIAS: Record<string, string> = {
-  usa: "united states",
-  "u.s.": "united states",
-  "u.s": "united states",
-  "united states of america": "united states",
-  uk: "united kingdom",
-  "u.k.": "united kingdom",
-  turkey: "turkiye",
-  "czech republic": "czechia"
-};
-
-function normalizeCountry(input: string) {
-  const normalized = input
-    .trim()
-    .toLowerCase()
-    .replace(/[’']/g, "'")
-    .replace(/\s+/g, " ");
-  return COUNTRY_ALIAS[normalized] ?? normalized;
-}
-
 function iso2FromIso3(iso3: string | null) {
   if (!iso3) return null;
   const converted = countries.alpha3ToAlpha2(iso3.toUpperCase());
@@ -47,8 +28,7 @@ function iso2FromIso3(iso3: string | null) {
 function fromRows(rows: CountryLookupRow[]) {
   const map = new Map<string, CountryMeta>();
   for (const row of rows) {
-    const key = normalizeCountry(row.rawLabel);
-    map.set(key, {
+    const entry: CountryMeta = {
       country: row.rawLabel,
       displayName: row.displayName,
       iso2: iso2FromIso3(row.iso3),
@@ -56,7 +36,10 @@ function fromRows(rows: CountryLookupRow[]) {
       latitude: row.lat,
       longitude: row.lng,
       mapped: row.lat !== null && row.lng !== null
-    });
+    };
+
+    map.set(normalizeCountryLabel(row.rawLabel), entry);
+    map.set(normalizeCountryLabel(row.displayName), entry);
   }
   return map;
 }
@@ -107,7 +90,7 @@ export async function getCountryMetadataMap() {
 }
 
 export function resolveCountryMeta(country: string, map: Map<string, CountryMeta>): CountryMeta {
-  const key = normalizeCountry(country);
+  const key = normalizeCountryLabel(country);
   const entry = map.get(key);
   if (entry) return entry;
 

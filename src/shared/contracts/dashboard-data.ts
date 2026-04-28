@@ -63,6 +63,15 @@ const optionalString = z
   .catch(undefined);
 
 const optionalNumber = z.coerce.number().finite().optional().catch(undefined);
+const queryBoolean = z.preprocess((value) => {
+  if (value === 1) return true;
+  if (value === 0) return false;
+  if (typeof value !== "string") return value;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true" || normalized === "1") return true;
+  if (normalized === "false" || normalized === "0") return false;
+  return value;
+}, z.boolean());
 
 export const dashboardFiltersSchema = z.object({
   year: optionalString,
@@ -74,8 +83,10 @@ export const dashboardFiltersSchema = z.object({
   donor: optionalString,
   sector: optionalString,
   minAmount: optionalNumber,
+  tableQ: z.string().trim().max(240).optional().catch(undefined),
   q: z.string().trim().max(240).optional().catch(undefined),
   viewMode: viewModeSchema,
+  includeDomestic: queryBoolean.optional().default(false),
   outlierOnly: z.coerce.boolean().optional().default(false)
 });
 
@@ -119,6 +130,12 @@ export type FilterOption = {
   count?: number;
   isAggregate?: boolean;
 };
+
+export type CaveatTag =
+  | "unspecified_recipient"
+  | "regional_aggregate"
+  | "multi_year_aggregate"
+  | "domestic_flow";
 
 export type FilterOptionsResponse = {
   years: FilterOption[];
@@ -175,6 +192,8 @@ export type CountrySummaryRow = {
   uniqueProjects: number;
   iso2: string | null;
   iso3: string | null;
+  recipientGeoType: string;
+  caveats: CaveatTag[];
 };
 
 export type FlowSummaryRow = {
@@ -184,10 +203,27 @@ export type FlowSummaryRow = {
   totalFunding: number;
   uniqueProjects: number;
   yearLabels: string[];
+  flowType: string;
+  recipientGeoType: string;
   donorIso2: string | null;
   donorIso3: string | null;
   recipientIso2: string | null;
   recipientIso3: string | null;
+  caveats: CaveatTag[];
+};
+
+export type CountrySummaryResponse = {
+  rows: CountrySummaryRow[];
+  page: number;
+  pageSize: number;
+  totalRows: number;
+};
+
+export type FlowSummaryResponse = {
+  rows: FlowSummaryRow[];
+  page: number;
+  pageSize: number;
+  totalRows: number;
 };
 
 export type CauseSummaryRow = {
@@ -260,12 +296,25 @@ export type YearlyFundingDatum = {
   isAggregate: boolean;
 };
 
+export type CauseBreakdownDatum = {
+  cause: Cause;
+  label: string;
+  value: number;
+};
+
+export type CauseBreakdownWithProjectsDatum = CauseBreakdownDatum & {
+  uniqueProjects: number;
+};
+
 export type DashboardCharts = {
   yearlyFunding: YearlyFundingDatum[];
   topRecipients: Array<{ label: string; value: number }>;
   topDonors: Array<{ label: string; value: number }>;
   topSectors: Array<{ label: string; value: number }>;
   causeMarkers: Array<{ label: string; value: number }>;
+  causeByDonorContinent: CauseBreakdownDatum[];
+  causeByOrganization: CauseBreakdownWithProjectsDatum[];
+  causeBySector: CauseBreakdownWithProjectsDatum[];
 };
 
 export type DashboardSummaryResponse = {

@@ -6,6 +6,7 @@ import { useCallback, useMemo } from "react";
 
 const DEFAULT_FILTERS: DashboardFilters = {
   viewMode: "project",
+  includeDomestic: false,
   outlierOnly: false
 };
 
@@ -18,6 +19,7 @@ const STRING_KEYS = [
   "donor",
   "sector",
   "cause",
+  "tableQ",
   "q"
 ] as const;
 
@@ -30,6 +32,7 @@ export function useDashboardFilters() {
     const next: DashboardFilters = {
       ...DEFAULT_FILTERS,
       viewMode: searchParams.get("viewMode") === "row" ? "row" : "project",
+      includeDomestic: searchParams.get("includeDomestic") === "true",
       outlierOnly: searchParams.get("outlierOnly") === "true"
     };
 
@@ -54,7 +57,13 @@ export function useDashboardFilters() {
 
   const setFilters = useCallback(
     (patch: Partial<DashboardFilters>) => {
-      const params = new URLSearchParams(searchParams.toString());
+      const latestQuery =
+        typeof window === "undefined"
+          ? searchParams.toString()
+          : window.location.search.startsWith("?")
+            ? window.location.search.slice(1)
+            : window.location.search;
+      const params = new URLSearchParams(latestQuery);
 
       for (const [key, value] of Object.entries(patch)) {
         if (value === undefined || value === null || value === "" || value === false) {
