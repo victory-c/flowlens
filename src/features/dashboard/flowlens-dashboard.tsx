@@ -15,7 +15,7 @@ import type {
   RawTableRow,
   YearlySummaryRow
 } from "@/shared/contracts/dashboard-data";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import ReactECharts from "echarts-for-react";
 import { ArrowUpDown, ChevronDown, Filter, Loader2, Monitor, MonitorOff, RotateCcw, Search, X } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -588,20 +588,25 @@ export function FlowLensDashboard() {
   const [judgeDemoMode] = useState(true);
   const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
   const [analyticsActivated, setAnalyticsActivated] = useState(false);
-  const [tableQOverride, setTableQOverride] = useState<string | null>(null);
+  const [tableQInput, setTableQInput] = useState(filters.tableQ ?? "");
   const analyticsSectionRef = useRef<HTMLElement | null>(null);
 
-  const effectiveFilters = useMemo<DashboardFilters>(() => {
-    if (tableQOverride === null) return filters;
-    return {
-      ...filters,
-      tableQ: tableQOverride || undefined
-    };
-  }, [filters, tableQOverride]);
+  const effectiveFilters = filters;
 
   useEffect(() => {
-    setTableQOverride(null);
+    setTableQInput(filters.tableQ ?? "");
   }, [filters.tableQ]);
+
+  useEffect(() => {
+    const nextTableQ = tableQInput.trim();
+    if (nextTableQ === (filters.tableQ ?? "")) return;
+
+    const timer = window.setTimeout(() => {
+      setFilters({ tableQ: nextTableQ || undefined });
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [filters.tableQ, setFilters, tableQInput]);
 
   useEffect(() => {
     setRawPage(1);
@@ -668,14 +673,16 @@ export function FlowLensDashboard() {
   const countryQuery = useQuery({
     queryKey: ["dashboard", "country-summary", effectiveFilters, countryPage, countrySortBy, countrySortDir],
     queryFn: () => getCountrySummary(effectiveFilters, countryPage, 25, countrySortBy, countrySortDir),
-    enabled: analyticsActivated && (activeTab === "country" || activeTab === "overview")
+    enabled: analyticsActivated && (activeTab === "country" || activeTab === "overview"),
+    placeholderData: keepPreviousData
   });
 
   const flowSummaryPage = activeTab === "flows" ? flowPage : 1;
   const flowSummaryQuery = useQuery({
     queryKey: ["dashboard", "flow-summary", effectiveFilters, flowSummaryPage, flowSortBy, flowSortDir],
     queryFn: () => getFlowSummary(effectiveFilters, flowSummaryPage, 25, flowSortBy, flowSortDir),
-    enabled: analyticsActivated
+    enabled: analyticsActivated,
+    placeholderData: keepPreviousData
   });
 
   const causeQuery = useQuery({
@@ -824,7 +831,7 @@ export function FlowLensDashboard() {
                 <button
                   className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-500/60 bg-slate-900/45 px-4 text-sm text-slate-100 transition hover:border-sky-300"
                   onClick={() => {
-                    setTableQOverride(null);
+                    setTableQInput("");
                     resetFilters();
                   }}
                 >
@@ -885,16 +892,13 @@ export function FlowLensDashboard() {
             {activeTab === "country" && (
               <CountryTab
                 rows={countrySummaryRows}
-                loading={countryQuery.isLoading}
+                loading={countryQuery.isLoading && !countryQuery.data}
+                refreshing={countryQuery.isFetching && Boolean(countryQuery.data)}
                 page={countryQuery.data?.data.page ?? countryPage}
                 pageSize={countryQuery.data?.data.pageSize ?? 25}
                 totalRows={countryQuery.data?.data.totalRows ?? 0}
-                tableQ={effectiveFilters.tableQ}
-                onTableQChange={(value) => {
-                  const nextValue = value || undefined;
-                  setTableQOverride(nextValue ?? "");
-                  setFilters({ tableQ: nextValue });
-                }}
+                tableQ={tableQInput}
+                onTableQChange={setTableQInput}
                 onNext={() => setCountryPage((page) => page + 1)}
                 onPrev={() => setCountryPage((page) => Math.max(1, page - 1))}
                 sortBy={countrySortBy}
@@ -906,16 +910,13 @@ export function FlowLensDashboard() {
             {activeTab === "flows" && (
               <FlowTab
                 rows={flowSummaryRows}
-                loading={flowSummaryQuery.isLoading}
+                loading={flowSummaryQuery.isLoading && !flowSummaryQuery.data}
+                refreshing={flowSummaryQuery.isFetching && Boolean(flowSummaryQuery.data)}
                 page={flowSummaryQuery.data?.data.page ?? flowPage}
                 pageSize={flowSummaryQuery.data?.data.pageSize ?? 25}
                 totalRows={flowSummaryQuery.data?.data.totalRows ?? 0}
-                tableQ={effectiveFilters.tableQ}
-                onTableQChange={(value) => {
-                  const nextValue = value || undefined;
-                  setTableQOverride(nextValue ?? "");
-                  setFilters({ tableQ: nextValue });
-                }}
+                tableQ={tableQInput}
+                onTableQChange={setTableQInput}
                 onNext={() => setFlowPage((page) => page + 1)}
                 onPrev={() => setFlowPage((page) => Math.max(1, page - 1))}
                 sortBy={flowSortBy}
@@ -2722,6 +2723,7 @@ function SortHeader({
 function CountryTab({
   rows,
   loading,
+  refreshing,
   page,
   pageSize,
   totalRows,
@@ -2735,6 +2737,7 @@ function CountryTab({
 }: {
   rows: CountrySummaryRow[];
   loading: boolean;
+  refreshing: boolean;
   page: number;
   pageSize: number;
   totalRows: number;
@@ -2764,10 +2767,17 @@ function CountryTab({
           placeholder="Search recipient labels"
           value={tableQ ?? ""}
           onChange={(event) => onTableQChange(event.currentTarget.value)}
+          autoComplete="off"
           aria-label="Country and flow table search"
         />
       </section>
-      <div className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-950/70">
+      <div className="relative min-h-[360px] overflow-hidden rounded-2xl border border-slate-700 bg-slate-950/70">
+        {refreshing && (
+          <div className="pointer-events-none absolute right-3 top-3 z-10 inline-flex h-8 items-center gap-2 rounded-full border border-slate-600/80 bg-slate-950/90 px-3 text-xs text-slate-200 shadow-lg">
+            <Loader2 size={14} className="animate-spin text-sky-200" />
+            Updating
+          </div>
+        )}
         <table className="min-w-full text-sm">
           <thead className="bg-slate-900/60 text-left text-xs uppercase tracking-wide text-slate-400">
             <tr>
@@ -2841,6 +2851,7 @@ function CountryTab({
 function FlowTab({
   rows,
   loading,
+  refreshing,
   page,
   pageSize,
   totalRows,
@@ -2854,6 +2865,7 @@ function FlowTab({
 }: {
   rows: FlowSummaryRow[];
   loading: boolean;
+  refreshing: boolean;
   page: number;
   pageSize: number;
   totalRows: number;
@@ -2886,10 +2898,17 @@ function FlowTab({
           placeholder="Search donor or recipient"
           value={tableQ ?? ""}
           onChange={(event) => onTableQChange(event.currentTarget.value)}
+          autoComplete="off"
           aria-label="Country and flow table search"
         />
       </section>
-      <div className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-950/70">
+      <div className="relative min-h-[360px] overflow-hidden rounded-2xl border border-slate-700 bg-slate-950/70">
+        {refreshing && (
+          <div className="pointer-events-none absolute right-3 top-3 z-10 inline-flex h-8 items-center gap-2 rounded-full border border-slate-600/80 bg-slate-950/90 px-3 text-xs text-slate-200 shadow-lg">
+            <Loader2 size={14} className="animate-spin text-sky-200" />
+            Updating
+          </div>
+        )}
         <table className="min-w-full text-sm">
           <thead className="bg-slate-900/60 text-left text-xs uppercase tracking-wide text-slate-400">
             <tr>
