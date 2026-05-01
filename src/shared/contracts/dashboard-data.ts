@@ -78,6 +78,7 @@ export const dashboardFiltersSchema = z.object({
   cause: causeSchema.optional().catch(undefined),
   donorCountry: optionalString,
   recipientCountry: optionalString,
+  connectedCountry: optionalString,
   region: optionalString,
   organization: optionalString,
   donor: optionalString,
@@ -245,7 +246,9 @@ export type RawTableRow = {
   id: number;
   yearLabel: string;
   organization: string;
+  donorCountry: string | null;
   recipientCountry: string;
+  flowType: string | null;
   region: string;
   sectorName: string;
   amountUsd: number;

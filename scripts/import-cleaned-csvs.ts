@@ -6,8 +6,13 @@ import { createPool } from "./common";
 import "./load-env";
 
 const CLEANED_DATA_DIR = process.env.FLOWLENS_CLEANED_DATA_DIR ?? "./cleaned_data6";
+const RAW_CSV_PATH = process.env.FLOWLENS_CSV_PATH ?? "./OECD Dataset.xlsx - complete_p4d3_df.csv";
 
 type CsvRow = Record<string, string | undefined>;
+type MainRowContext = {
+  donorCountry: string | null;
+  flowType: string | null;
+};
 
 const FILES = {
   mainDashboard: "01_df_main_dashboard.csv",
@@ -23,8 +28,10 @@ const MAIN_COLUMNS = [
   "year_label",
   "year_int",
   "donor",
+  "donor_country",
   "region",
   "recipient_country",
+  "flow_type",
   "sector_name",
   "amount_usd",
   "project_title",
@@ -74,6 +81,10 @@ const FLOW_COLUMNS = [
 
 function cleanedPath(fileName: string) {
   return path.resolve(process.cwd(), CLEANED_DATA_DIR, fileName);
+}
+
+function rawPath() {
+  return path.resolve(process.cwd(), RAW_CSV_PATH);
 }
 
 function yearParts(value: string | undefined) {
@@ -131,6 +142,31 @@ async function readCsvRows(fileName: string, onRow: (row: CsvRow, index: number)
   }
 
   return index;
+}
+
+async function loadMainRowContext() {
+  const context = new Map<string, MainRowContext>();
+  const parser = createReadStream(rawPath()).pipe(
+    parse({
+      bom: true,
+      columns: true,
+      relax_quotes: true,
+      skip_empty_lines: true
+    })
+  );
+
+  for await (const record of parser) {
+    const row = record as CsvRow;
+    const projectId = optionalText(row.row_id);
+    if (!projectId) continue;
+    context.set(projectId, {
+      donorCountry: optionalText(row.Donor_country),
+      flowType: optionalText(row.type_of_flow)
+    });
+  }
+
+  console.log(`Loaded ${context.size} raw row contexts from ${RAW_CSV_PATH}.`);
+  return context;
 }
 
 async function flush(client: PoolClient, table: string, columns: readonly string[], batch: unknown[][]) {
@@ -198,6 +234,8 @@ async function main() {
       RESTART IDENTITY
     `);
 
+    const mainRowContext = await loadMainRowContext();
+
     await loadTable(
       client,
       FILES.mainDashboard,
@@ -206,12 +244,15 @@ async function main() {
       (row, index) => {
         const { yearLabel, yearInt } = yearParts(row.Year);
         const projectId = optionalText(row.Project_ID);
+        const context = projectId ? mainRowContext.get(projectId) : undefined;
         return [
           yearLabel,
           yearInt,
           requiredText(row.Donor, "Donor"),
+          context?.donorCountry ?? null,
           requiredText(row.Region, "Region"),
           requiredText(row.Recipient_Country, "Recipient_Country"),
+          context?.flowType ?? null,
           requiredText(row.Sector_Name, "Sector_Name"),
           numberValue(row.Amount_USD, "Amount_USD"),
           optionalText(row.Project_Title),

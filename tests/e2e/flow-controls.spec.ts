@@ -38,6 +38,23 @@ test("domestic filter and table search are wired to dashboard-data requests", as
       )
     )
     .toBe(true);
+
+  await page.getByRole("tab", { name: /Cause Analysis/i }).click();
+  await page.getByRole("tab", { name: /Yearly Trends/i }).click();
+  await page.getByRole("tab", { name: /Raw Data Explorer/i }).click();
+
+  await expect
+    .poll(() =>
+      ["cause_summary", "yearly_summary", "raw_table"].every((view) =>
+        requestUrls.some(
+          (url) =>
+            url.searchParams.get("view") === view &&
+            url.searchParams.get("includeDomestic") === "true" &&
+            url.searchParams.get("tableQ") === "india"
+        )
+      )
+    )
+    .toBe(true);
 });
 
 test("forced globe crash falls back to 2D mode", async ({ page }) => {
@@ -67,6 +84,16 @@ test("country focus search pins state, drag does not clear, and hover does not r
   await page.getByRole("button", { name: /^Focus$/i }).click();
 
   await expect(page.getByText("Pinned country", { exact: true })).toBeVisible();
+  await expect.poll(() => new URL(page.url()).searchParams.get("connectedCountry")).toBe("United States");
+  await expect
+    .poll(() =>
+      requestUrls.some(
+        (url) =>
+          url.searchParams.get("view") === "globe_flows" &&
+          url.searchParams.get("connectedCountry") === "United States"
+      )
+    )
+    .toBe(true);
   const requestCountBeforeInteraction = requestUrls.length;
 
   const canvas = page.locator("canvas").first();
@@ -86,6 +113,7 @@ test("country focus search pins state, drag does not clear, and hover does not r
 
   await page.keyboard.press("Escape");
   await expect(page.getByText("Pinned country", { exact: true })).toBeHidden();
+  await expect.poll(() => new URL(page.url()).searchParams.get("connectedCountry")).toBe(null);
 });
 
 test("country with no corridors shows empty state and unsupported filters are informational", async ({ page }) => {

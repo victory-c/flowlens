@@ -552,6 +552,7 @@ function activeFilterEntries(filters: DashboardFilters) {
     year: "Year",
     donorCountry: "Donor Country",
     recipientCountry: "Recipient Country",
+    connectedCountry: "Connected Country",
     region: "Region",
     organization: "Organization",
     cause: "Cause",
@@ -653,6 +654,13 @@ export function FlowLensDashboard() {
     [scrollToAnalytics, setFilters]
   );
 
+  const handleCountryFocusChange = useCallback(
+    (connectedCountry: string | null) => {
+      setFilters({ connectedCountry: connectedCountry ?? undefined });
+    },
+    [setFilters]
+  );
+
   const filterOptionsQuery = useQuery({
     queryKey: ["dashboard", "filter-options", effectiveFilters],
     queryFn: () => getFilterOptions(effectiveFilters),
@@ -749,6 +757,8 @@ export function FlowLensDashboard() {
             loading={globeQuery.isLoading}
             unsupportedFilters={globeQuery.data?.data.unsupportedFilters ?? []}
             onSelectFlow={handleFlowSelect}
+            onCountryFocusChange={handleCountryFocusChange}
+            connectedCountry={effectiveFilters.connectedCountry}
             fullScreen
             lowGraphicsMode={lowGraphicsMode}
           />
@@ -1038,6 +1048,8 @@ function GlobeHero({
   loading,
   unsupportedFilters,
   onSelectFlow,
+  onCountryFocusChange,
+  connectedCountry,
   fullScreen = false,
   lowGraphicsMode = false
 }: {
@@ -1045,6 +1057,8 @@ function GlobeHero({
   loading: boolean;
   unsupportedFilters: string[];
   onSelectFlow: (flow: GlobeFlow) => void;
+  onCountryFocusChange: (country: string | null) => void;
+  connectedCountry?: string;
   fullScreen?: boolean;
   lowGraphicsMode?: boolean;
 }) {
@@ -1484,7 +1498,7 @@ function GlobeHero({
     [arcHoverEnabled, pinnedCountryIso3]
   );
 
-  const clearCountryFocus = useCallback(() => {
+  const clearLocalCountryFocus = useCallback(() => {
     if (hoverClearTimeoutRef.current) {
       clearTimeout(hoverClearTimeoutRef.current);
       hoverClearTimeoutRef.current = null;
@@ -1496,6 +1510,11 @@ function GlobeHero({
     setHoveredCountryName(null);
     setSelectedCorridor(null);
   }, []);
+
+  const clearCountryFocus = useCallback(() => {
+    clearLocalCountryFocus();
+    onCountryFocusChange(null);
+  }, [clearLocalCountryFocus, onCountryFocusChange]);
 
   const cancelHoverClear = useCallback(() => {
     if (!hoverClearTimeoutRef.current) return;
@@ -1539,10 +1558,28 @@ function GlobeHero({
       setHoveredCountryIso3(null);
       setHoveredCountryName(name ?? optionByIso.get(iso3)?.name ?? iso3);
       setSelectedCorridor(null);
+      onCountryFocusChange(countryCorridorIndex[iso3]?.label ?? optionByIso.get(iso3)?.name ?? name ?? iso3);
       rotateToCountry(iso3);
     },
-    [optionByIso, rotateToCountry]
+    [countryCorridorIndex, onCountryFocusChange, optionByIso, rotateToCountry]
   );
+
+  useEffect(() => {
+    if (connectedCountry) return;
+    if (!pinnedCountryIso3) return;
+    clearLocalCountryFocus();
+  }, [clearLocalCountryFocus, connectedCountry, pinnedCountryIso3]);
+
+  useEffect(() => {
+    if (!connectedCountry) return;
+    const match = matchCountrySearchInput(countryOptions, connectedCountry);
+    if (!match || match.iso3 === pinnedCountryIso3) return;
+    setPinnedCountryIso3(match.iso3);
+    setHoveredCountryIso3(null);
+    setHoveredCountryName(countryCorridorIndex[match.iso3]?.label ?? match.name);
+    setSelectedCorridor(null);
+    rotateToCountry(match.iso3);
+  }, [connectedCountry, countryCorridorIndex, countryOptions, pinnedCountryIso3, rotateToCountry]);
 
   const applyGlobeDistanceLimits = useCallback(() => {
     const globe = globeRef.current;
@@ -1762,13 +1799,26 @@ function GlobeHero({
         </div>
       ) : rows.length === 0 ? (
         <div
-          className={`flex items-center justify-center p-6 text-center text-sm text-slate-300 ${
+          className={`flex flex-col items-center justify-center gap-3 p-6 text-center text-sm text-slate-300 ${
             fullScreen
               ? "h-full min-h-[100svh] bg-[#01040a]"
               : "h-[62vh] min-h-[420px] rounded-2xl border border-slate-700 bg-slate-900/70"
           }`}
         >
-          No exact-country corridors match the current filters.
+          <p>
+            {connectedCountry
+              ? "No donation corridors found for this country under the current filters."
+              : "No exact-country corridors match the current filters."}
+          </p>
+          {connectedCountry && (
+            <button
+              type="button"
+              className="rounded-full border border-slate-600 px-3 py-1 text-xs text-slate-100 hover:border-sky-300"
+              onClick={() => onCountryFocusChange(null)}
+            >
+              Clear country focus
+            </button>
+          )}
         </div>
       ) : (
         <div className="relative">
@@ -2423,6 +2473,7 @@ function JudgeInsightCards({
   const filterTokens = [
     filters.year ? `Year: ${filters.year}` : "Year: All years",
     filters.includeDomestic ? "Domestic: included" : "Domestic: excluded",
+    filters.connectedCountry ? `Connected: ${filters.connectedCountry}` : null,
     filters.cause ? `Cause: ${filters.cause}` : null,
     filters.region ? `Region: ${filters.region}` : null
   ].filter(Boolean) as string[];
@@ -3340,21 +3391,23 @@ function RawDataTab({
               <th className="px-4 py-3">Project</th>
               <th className="px-4 py-3">Year</th>
               <th className="px-4 py-3">Organization</th>
+              <th className="px-4 py-3">Donor Country</th>
               <th className="px-4 py-3">Recipient</th>
+              <th className="px-4 py-3">Flow Type</th>
               <th className="px-4 py-3">Amount</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td className="px-4 py-8 text-center text-slate-300" colSpan={5}>
+                <td className="px-4 py-8 text-center text-slate-300" colSpan={7}>
                   <Loader2 className="mr-2 inline animate-spin" size={14} />
                   Loading rows...
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td className="px-4 py-8 text-center text-slate-300" colSpan={5}>
+                <td className="px-4 py-8 text-center text-slate-300" colSpan={7}>
                   No records matched these filters.
                 </td>
               </tr>
@@ -3373,7 +3426,9 @@ function RawDataTab({
                   </td>
                   <td className="px-4 py-3">{row.yearLabel}</td>
                   <td className="px-4 py-3">{row.organization}</td>
+                  <td className="px-4 py-3">{row.donorCountry ?? "Unknown"}</td>
                   <td className="px-4 py-3">{row.recipientCountry}</td>
+                  <td className="px-4 py-3">{row.flowType ?? "Unknown"}</td>
                   <td className="px-4 py-3">{formatUsdMillions(row.amountUsd, false)}</td>
                 </tr>
               ))
@@ -3481,6 +3536,19 @@ function FilterDrawer({
 }) {
   if (!open) return null;
 
+  const connectedCountryOptions = Array.from(
+    [...(options?.donorCountries ?? []), ...(options?.recipientCountries ?? [])]
+      .reduce<Map<string, FilterOption>>((map, option) => {
+        const existing = map.get(option.value);
+        map.set(option.value, {
+          ...option,
+          count: (existing?.count ?? 0) + (option.count ?? 0)
+        });
+        return map;
+      }, new Map())
+      .values()
+  ).sort((a, b) => (b.count ?? 0) - (a.count ?? 0) || a.label.localeCompare(b.label));
+
   return (
     <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose}>
       <aside
@@ -3533,6 +3601,12 @@ function FilterDrawer({
             value={filters.recipientCountry}
             options={options?.recipientCountries}
             onChange={(recipientCountry) => setFilters({ recipientCountry })}
+          />
+          <SelectField
+            label="Connected Country"
+            value={filters.connectedCountry}
+            options={connectedCountryOptions}
+            onChange={(connectedCountry) => setFilters({ connectedCountry })}
           />
           <SelectField
             label="Organization"

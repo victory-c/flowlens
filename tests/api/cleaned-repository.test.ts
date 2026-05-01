@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { dashboardFiltersSchema } from "@/shared/contracts/dashboard-data";
 import {
   buildFlowFilteredCte,
@@ -8,6 +8,9 @@ import {
   recipientGeoTypeFromLabel,
   regionFilterValues
 } from "@/server/analytics/cleaned-flow-utils";
+import { __testing as cleanedRepositoryTesting } from "@/server/analytics/cleaned-repository";
+
+vi.mock("server-only", () => ({}));
 
 describe("cleaned repository filter and caveat behavior", () => {
   it("excludes domestic flows by default", () => {
@@ -67,5 +70,37 @@ describe("cleaned repository filter and caveat behavior", () => {
     expect(cte).toContain("region = ANY($1::text[])");
     expect(Array.isArray(params[0])).toBe(true);
     expect(params[0]).toEqual(expect.arrayContaining(["Americas", "America"]));
+  });
+
+  it("applies donor, connected-country, and domestic filters to row-level views", () => {
+    const filters = dashboardFiltersSchema.parse({
+      donorCountry: "United Kingdom",
+      connectedCountry: "Kenya"
+    });
+    const { cte, params } = cleanedRepositoryTesting.mainFilteredCte(filters);
+
+    expect(params).toEqual(["United Kingdom", "Kenya"]);
+    expect(cte).toContain("donor_country = $1");
+    expect(cte).toContain("(donor_country = $2 OR recipient_country = $2)");
+    expect(cte).toContain("coalesce(flow_type, '') <> 'Domestic'");
+  });
+
+  it("applies table search to row-level views when requested", () => {
+    const filters = dashboardFiltersSchema.parse({ tableQ: "water" });
+    const { cte, params, unsupported } = cleanedRepositoryTesting.mainFilteredCte(filters, [], {
+      includeTableSearch: true
+    });
+
+    expect(params).toEqual(["%water%"]);
+    expect(cte).toContain("search_text LIKE $1");
+    expect(unsupported).not.toContain("tableQ");
+  });
+
+  it("applies connected-country filters to flow views", () => {
+    const filters = dashboardFiltersSchema.parse({ connectedCountry: "Kenya" });
+    const { cte, params } = buildFlowFilteredCte(filters, { organizationFilterActive: false });
+
+    expect(params).toEqual(["Kenya"]);
+    expect(cte).toContain("(donor_country = $1 OR recipient_country = $1)");
   });
 });

@@ -14,6 +14,7 @@ const STRING_KEYS = [
   "year",
   "donorCountry",
   "recipientCountry",
+  "connectedCountry",
   "region",
   "organization",
   "donor",
