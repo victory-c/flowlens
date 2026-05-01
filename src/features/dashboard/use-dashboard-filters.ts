@@ -47,6 +47,8 @@ export function useDashboardFilters() {
       }
     }
 
+    next.connectedCountry ??= searchParams.get("country") ?? searchParams.get("focusCountry") ?? undefined;
+
     const minAmount = searchParams.get("minAmount");
     if (minAmount) {
       const parsed = Number(minAmount);

@@ -96,6 +96,26 @@ describe("cleaned repository filter and caveat behavior", () => {
     expect(unsupported).not.toContain("tableQ");
   });
 
+  it("applies sector filters to row-level analytics views", () => {
+    const filters = dashboardFiltersSchema.parse({ sector: "Health" });
+    const { cte, params } = cleanedRepositoryTesting.mainFilteredCte(filters);
+
+    expect(params).toEqual(["Health"]);
+    expect(cte).toContain("sector_name = $1");
+  });
+
+  it("applies raw text search only to project titles and organizations", () => {
+    const filters = dashboardFiltersSchema.parse({ q: "water" });
+    const { cte, params } = cleanedRepositoryTesting.mainFilteredCte(filters, [], {
+      includeTextSearch: true
+    });
+
+    expect(params).toEqual(["%water%"]);
+    expect(cte).toContain("lower(coalesce(project_title, '')) LIKE $1");
+    expect(cte).toContain("lower(coalesce(donor, '')) LIKE $1");
+    expect(cte).not.toContain("search_text LIKE $1");
+  });
+
   it("applies connected-country filters to flow views", () => {
     const filters = dashboardFiltersSchema.parse({ connectedCountry: "Kenya" });
     const { cte, params } = buildFlowFilteredCte(filters, { organizationFilterActive: false });

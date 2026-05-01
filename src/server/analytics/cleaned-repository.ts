@@ -217,7 +217,9 @@ function mainFilteredCte(
 
   if (options.includeTextSearch && filters.q) {
     params.push(`%${filters.q.toLowerCase()}%`);
-    where.push(`search_text LIKE $${params.length}`);
+    where.push(
+      `(lower(coalesce(project_title, '')) LIKE $${params.length} OR lower(coalesce(donor, '')) LIKE $${params.length})`
+    );
   }
 
   if (options.includeTableSearch && filters.tableQ) {
