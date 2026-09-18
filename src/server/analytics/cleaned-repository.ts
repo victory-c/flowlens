@@ -163,10 +163,15 @@ function organizationValue(filters: DashboardFilters) {
   return filters.organization ?? filters.donor;
 }
 
+const MAIN_SEARCH_OPTIONS = {
+  includeTextSearch: true,
+  includeTableSearch: true
+} as const;
+
 function mainFilteredCte(
   filters: DashboardFilters,
   existingParams: unknown[] = [],
-  options: { includeTextSearch?: boolean } = {}
+  options: { includeTextSearch?: boolean; includeTableSearch?: boolean } = {}
 ) {
   const params = [...existingParams];
   const where = ["1 = 1"];
@@ -179,9 +184,14 @@ function mainFilteredCte(
   };
 
   addTextFilter("year_label", filters.year);
+  addTextFilter("donor_country", filters.donorCountry);
   addTextFilter("recipient_country", filters.recipientCountry);
   addTextFilter("donor", organizationValue(filters));
   addTextFilter("sector_name", filters.sector);
+  if (filters.connectedCountry) {
+    params.push(filters.connectedCountry);
+    where.push(`(donor_country = $${params.length} OR recipient_country = $${params.length})`);
+  }
   if (filters.region) {
     params.push(regionFilterValues(filters.region));
     where.push(`region = ANY($${params.length}::text[])`);
@@ -201,14 +211,23 @@ function mainFilteredCte(
     where.push("amount_usd >= 14.8");
   }
 
-  if (options.includeTextSearch && filters.q) {
-    params.push(`%${filters.q.toLowerCase()}%`);
-    where.push(`search_text LIKE $${params.length}`);
+  if (!filters.includeDomestic) {
+    where.push("coalesce(flow_type, '') <> 'Domestic'");
   }
 
-  if (filters.donorCountry) unsupported.push("donorCountry");
-  if (filters.includeDomestic) unsupported.push("includeDomestic");
-  if (filters.tableQ) unsupported.push("tableQ");
+  if (options.includeTextSearch && filters.q) {
+    params.push(`%${filters.q.toLowerCase()}%`);
+    where.push(
+      `(lower(coalesce(project_title, '')) LIKE $${params.length} OR lower(coalesce(donor, '')) LIKE $${params.length})`
+    );
+  }
+
+  if (options.includeTableSearch && filters.tableQ) {
+    params.push(`%${filters.tableQ.toLowerCase()}%`);
+    where.push(`search_text LIKE $${params.length}`);
+  } else if (filters.tableQ) {
+    unsupported.push("tableQ");
+  }
 
   return {
     params,
@@ -220,8 +239,10 @@ function mainFilteredCte(
           year_label,
           year_int,
           donor,
+          donor_country,
           region,
           recipient_country,
+          flow_type,
           sector_name,
           amount_usd,
           project_title,
@@ -267,6 +288,7 @@ function rawSortClause(sortBy: DashboardDataRequest["sortBy"], sortDir: Dashboar
   const columns: Partial<Record<DashboardDataRequest["sortBy"], string>> = {
     amount: "amount_usd",
     year: "year_int",
+    donorCountry: "donor_country",
     organization: "donor",
     recipientCountry: "recipient_country",
     region: "region",
@@ -284,6 +306,7 @@ function filtersFromRequest(request: DashboardDataRequest): DashboardFilters {
     cause,
     donorCountry,
     recipientCountry,
+    connectedCountry,
     region,
     organization,
     donor,
@@ -300,6 +323,7 @@ function filtersFromRequest(request: DashboardDataRequest): DashboardFilters {
     cause,
     donorCountry,
     recipientCountry,
+    connectedCountry,
     region,
     organization,
     donor,
@@ -318,7 +342,9 @@ function rawRow(row: PgRow): RawTableRow {
     id: num(row.id),
     yearLabel: String(row.year_label),
     organization: String(row.donor),
+    donorCountry: str(row.donor_country),
     recipientCountry: String(row.recipient_country),
+    flowType: str(row.flow_type),
     region: normalizeRegionLabel(String(row.region ?? "Unknown")),
     sectorName: String(row.sector_name),
     amountUsd: num(row.amount_usd),
@@ -444,7 +470,7 @@ export class CleanedAnalyticsRepository {
   async getOverviewMetrics(filters: DashboardFilters): Promise<OverviewMetrics> {
     const key = `cleaned-overview-metrics:${canonicalCleanedKey(filters)}`;
     return cached(key, CACHE_DAY, async () => {
-      const { cte, params } = mainFilteredCte(filters);
+      const { cte, params } = mainFilteredCte(filters, [], MAIN_SEARCH_OPTIONS);
       const [row] = await query<PgRow>(
         `${cte}
         SELECT
@@ -641,7 +667,7 @@ export class CleanedAnalyticsRepository {
     const key = `cleaned-cause-summary:${canonicalCleanedKey(request)}`;
 
     return cached(key, CACHE_DAY, async () => {
-      const { cte, params } = mainFilteredCte(filters);
+      const { cte, params } = mainFilteredCte(filters, [], MAIN_SEARCH_OPTIONS);
       params.push(request.pageSize, (request.page - 1) * request.pageSize);
 
       const causeQueries = CAUSE_CONFIG.map(
@@ -685,7 +711,7 @@ export class CleanedAnalyticsRepository {
     const key = `cleaned-yearly-summary:${canonicalCleanedKey(request)}`;
 
     return cached(key, CACHE_DAY, async () => {
-      const { cte, params } = mainFilteredCte(filters);
+      const { cte, params } = mainFilteredCte(filters, [], MAIN_SEARCH_OPTIONS);
       params.push(request.pageSize, (request.page - 1) * request.pageSize);
 
       const rows = await query<PgRow>(
@@ -717,7 +743,7 @@ export class CleanedAnalyticsRepository {
     const key = `cleaned-raw-table:${canonicalCleanedKey(request as Record<string, unknown>)}`;
 
     return cached(key, CACHE_DAY, async () => {
-      const { cte, params } = mainFilteredCte(filters);
+      const { cte, params } = mainFilteredCte(filters, [], MAIN_SEARCH_OPTIONS);
       params.push(request.pageSize, (request.page - 1) * request.pageSize);
 
       const rows = await query<PgRow>(
@@ -754,7 +780,7 @@ export class CleanedAnalyticsRepository {
     const key = `cleaned-project-detail:${projectKey}:${canonicalCleanedKey(filters)}`;
 
     return cached(key, CACHE_DAY, async () => {
-      const { cte, params } = mainFilteredCte(filters, [projectKey]);
+      const { cte, params } = mainFilteredCte(filters, [projectKey], MAIN_SEARCH_OPTIONS);
       const [summary] = await query<PgRow>(
         `${cte},
         selected_scope AS (
@@ -846,7 +872,7 @@ export class CleanedAnalyticsRepository {
     const key = `cleaned-filter-options:${canonicalCleanedKey(filters)}`;
 
     return cached(key, CACHE_DAY, async () => {
-      const { cte, params } = mainFilteredCte(filters);
+      const { cte, params } = mainFilteredCte(filters, [], MAIN_SEARCH_OPTIONS);
       const optionQuery = (column: string, limit = 100) =>
         query<PgRow>(
           `${cte}
@@ -962,7 +988,7 @@ export class CleanedAnalyticsRepository {
   }
 
   private async getTopOrganizations(filters: DashboardFilters) {
-    const { cte, params } = mainFilteredCte(filters);
+    const { cte, params } = mainFilteredCte(filters, [], MAIN_SEARCH_OPTIONS);
     const rows = await query<PgRow>(
       `${cte}
       SELECT donor AS label, coalesce(sum(amount_usd), 0)::float AS value
@@ -976,7 +1002,7 @@ export class CleanedAnalyticsRepository {
   }
 
   private async getTopRecipients(filters: DashboardFilters) {
-    const { cte, params } = mainFilteredCte(filters);
+    const { cte, params } = mainFilteredCte(filters, [], MAIN_SEARCH_OPTIONS);
     const rows = await query<PgRow>(
       `${cte}
       SELECT recipient_country AS label, coalesce(sum(amount_usd), 0)::float AS value
@@ -997,7 +1023,7 @@ export class CleanedAnalyticsRepository {
   }
 
   private async getTopSectors(filters: DashboardFilters) {
-    const { cte, params } = mainFilteredCte(filters);
+    const { cte, params } = mainFilteredCte(filters, [], MAIN_SEARCH_OPTIONS);
     const rows = await query<PgRow>(
       `${cte}
       SELECT sector_name AS label, coalesce(sum(amount_usd), 0)::float AS value
@@ -1011,7 +1037,7 @@ export class CleanedAnalyticsRepository {
   }
 
   private async getCauseBreakdownByOrganization(filters: DashboardFilters) {
-    const { cte, params } = mainFilteredCte(filters);
+    const { cte, params } = mainFilteredCte(filters, [], MAIN_SEARCH_OPTIONS);
     const causeQueries = CAUSE_CONFIG.map(
       (item) => `
         SELECT
@@ -1045,7 +1071,7 @@ export class CleanedAnalyticsRepository {
   }
 
   private async getCauseBreakdownBySector(filters: DashboardFilters) {
-    const { cte, params } = mainFilteredCte(filters);
+    const { cte, params } = mainFilteredCte(filters, [], MAIN_SEARCH_OPTIONS);
     const causeQueries = CAUSE_CONFIG.map(
       (item) => `
         SELECT
@@ -1225,6 +1251,7 @@ export function getCleanedAnalyticsRepository() {
 
 export const __testing = {
   buildFlowFilteredCte,
+  mainFilteredCte,
   recipientCaveats,
   recipientGeoTypeFromLabel,
   summarizedRecipientGeoType

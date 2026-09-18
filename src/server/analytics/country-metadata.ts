@@ -5,7 +5,7 @@ import countries from "i18n-iso-countries";
 import en from "i18n-iso-countries/langs/en.json";
 import type { CountryMeta } from "@/shared/contracts/dashboard-data";
 import { normalizeCountryLabel } from "./country-normalization";
-import { query } from "./db";
+import { query, usesExternalDatabase } from "./db";
 
 countries.registerLocale(en);
 
@@ -45,6 +45,8 @@ function fromRows(rows: CountryLookupRow[]) {
 }
 
 async function loadFromDatabase(): Promise<CountryLookupRow[]> {
+  if (!usesExternalDatabase()) return loadFromCsvFallback();
+
   const rows = await query<PgRow>(`
     SELECT raw_label, iso3, display_name, lat, lng
     FROM analytics.geo_lookup

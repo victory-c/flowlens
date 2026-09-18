@@ -32,6 +32,7 @@ describe("cleaned v1 dashboard contracts", () => {
         view: "raw_table",
         donor: "Gates Foundation",
         recipient: "Kenya",
+        focusCountry: "United States",
         amountMin: "0.25",
         table_q: "ethiopia",
         include_domestic: "true",
@@ -41,6 +42,7 @@ describe("cleaned v1 dashboard contracts", () => {
 
     expect(parsed.organization).toBe("Gates Foundation");
     expect(parsed.recipientCountry).toBe("Kenya");
+    expect(parsed.connectedCountry).toBe("United States");
     expect(parsed.minAmount).toBe(0.25);
     expect(parsed.tableQ).toBe("ethiopia");
     expect(parsed.includeDomestic).toBe(true);
