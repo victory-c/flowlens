@@ -1,5 +1,6 @@
 import "server-only";
 import pg from "pg";
+import { getEmbeddedDb } from "./embedded-db";
 
 const { Pool } = pg;
 
@@ -7,14 +8,16 @@ declare global {
   var flowlensPool: pg.Pool | undefined;
 }
 
-function createPool() {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error("DATABASE_URL is required for FlowLens analytics routes.");
-  }
+// By default queries run against the embedded PGlite snapshot in data/embedded/, so a plain
+// Vercel deployment serves the full dashboard with no external database. A hosted Postgres
+// (the original Supabase setup) is opt-in, so a stale DATABASE_URL cannot take the site down.
+export function usesExternalDatabase() {
+  return process.env.FLOWLENS_DATA_SOURCE === "postgres" && Boolean(process.env.DATABASE_URL);
+}
 
+function createPool() {
   return new Pool({
-    connectionString,
+    connectionString: process.env.DATABASE_URL,
     max: Number(process.env.DATABASE_POOL_MAX ?? 5),
     idleTimeoutMillis: 20_000,
     connectionTimeoutMillis: 10_000,
@@ -33,6 +36,12 @@ export function getPool() {
 }
 
 export async function query<T extends Record<string, unknown>>(text: string, values: unknown[] = []) {
-  const result = await getPool().query<T>(text, values);
+  if (usesExternalDatabase()) {
+    const result = await getPool().query<T>(text, values);
+    return result.rows;
+  }
+
+  const db = await getEmbeddedDb();
+  const result = await db.query<T>(text, values);
   return result.rows;
 }

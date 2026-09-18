@@ -32,6 +32,7 @@ test("globe-first demo path stays reachable", async ({ page }) => {
 
   await expect(page.getByRole("tab", { name: /Raw Data Explorer/i })).toBeVisible();
   await page.getByRole("tab", { name: /Raw Data Explorer/i }).click();
-  await expect(page.getByText(/Project (ID|Key):/).first()).toBeVisible();
+  await expect.poll(() => seenViews.has("raw_table"), { timeout: 15000 }).toBe(true);
+  await expect(page.getByText(/Project (ID|Key):/).first()).toBeVisible({ timeout: 15000 });
   await expect(page.getByRole("heading", { name: "Project Detail" })).toBeHidden();
 });

@@ -133,6 +133,10 @@ export function buildFlowFilteredCte(
   addTextFilter("year_label", filters.year);
   addTextFilter("donor_country", filters.donorCountry);
   addTextFilter("recipient_country", filters.recipientCountry);
+  if (filters.connectedCountry) {
+    params.push(filters.connectedCountry);
+    where.push(`(donor_country = $${params.length} OR recipient_country = $${params.length})`);
+  }
   if (filters.region) {
     params.push(regionFilterValues(filters.region));
     where.push(`region = ANY($${params.length}::text[])`);

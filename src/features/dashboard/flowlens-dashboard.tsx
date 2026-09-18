@@ -52,6 +52,7 @@ import {
   getRawTable,
   getYearlySummary
 } from "./api";
+import { boundedPercent } from "./insight-utils";
 import { useDashboardFilters } from "./use-dashboard-filters";
 
 type GlobeComponentProps = Record<string, unknown>;
@@ -148,6 +149,12 @@ const TABS: Array<{ key: TabKey; title: string; subtitle: string }> = [
   }
 ];
 
+const STABLE_BASELINE_FILTERS: DashboardFilters = {
+  viewMode: "project",
+  includeDomestic: false,
+  outlierOnly: false
+};
+
 const CAVEAT_LABEL: Record<CaveatTag, string> = {
   unspecified_recipient: "Unspecified recipient",
   regional_aggregate: "Unspecified recipient",
@@ -155,30 +162,32 @@ const CAVEAT_LABEL: Record<CaveatTag, string> = {
   domestic_flow: "Domestic flow"
 };
 
+// Both basemaps work without an API key: Esri's public, label-free ocean basemap tiles
+// for light mode, and a self-hosted dark texture (no tile service) for dark mode. The
+// globe draws its own country polygons and labels on top, so neither base carries labels.
 const GLOBE_BASEMAPS: Array<{
   id: GlobeBasemapId;
   label: string;
   description: string;
   attribution: string;
   globeImageUrl: string;
-  tileUrl: (x: number, y: number, l: number) => string;
+  tileUrl?: (x: number, y: number, l: number) => string;
 }> = [
   {
     id: "voyager",
-    label: "Voyager",
+    label: "Atlas",
     description: "Light atlas style with high-contrast custom overlays.",
-    attribution: "CARTO + OpenStreetMap contributors",
-    globeImageUrl: "https://unpkg.com/three-globe/example/img/earth-water.png",
+    attribution: "Esri, GEBCO, NOAA, National Geographic, Garmin, HERE, Geonames.org, and other contributors",
+    globeImageUrl: "/globe/earth-water.png",
     tileUrl: (x, y, l) =>
-      `https://a.basemaps.cartocdn.com/rastertiles/voyager_nolabels/${l}/${x}/${y}.png`
+      `https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/${l}/${y}/${x}`
   },
   {
     id: "dark-matter",
-    label: "Dark Matter",
+    label: "Dark",
     description: "Dark high-contrast base tuned for current globe styling.",
-    attribution: "CARTO + OpenStreetMap contributors",
-    globeImageUrl: "https://unpkg.com/three-globe/example/img/earth-water.png",
-    tileUrl: (x, y, l) => `https://a.basemaps.cartocdn.com/dark_nolabels/${l}/${x}/${y}.png`
+    attribution: "three-globe example texture (NASA)",
+    globeImageUrl: "/globe/earth-dark.jpg"
   }
 ];
 
@@ -552,8 +561,10 @@ function activeFilterEntries(filters: DashboardFilters) {
     year: "Year",
     donorCountry: "Donor Country",
     recipientCountry: "Recipient Country",
+    connectedCountry: "Connected Country",
     region: "Region",
     organization: "Organization",
+    sector: "Sector",
     cause: "Cause",
     minAmount: "Min Amount",
     tableQ: "Table Search",
@@ -563,7 +574,7 @@ function activeFilterEntries(filters: DashboardFilters) {
 
   return Object.entries(filters)
     .filter(([key, value]) => {
-      if (key === "viewMode" || key === "outlierOnly" || key === "donor" || key === "sector") return false;
+      if (key === "viewMode" || key === "outlierOnly" || key === "donor") return false;
       return value !== undefined && value !== null && value !== "" && value !== false;
     })
     .map(([key, value]) => ({
@@ -589,24 +600,57 @@ export function FlowLensDashboard() {
   const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
   const [analyticsActivated, setAnalyticsActivated] = useState(false);
   const [tableQInput, setTableQInput] = useState(filters.tableQ ?? "");
+  const [rawQInput, setRawQInput] = useState(filters.q ?? "");
+  const [tableQApplied, setTableQApplied] = useState(filters.tableQ ?? "");
+  const [rawQApplied, setRawQApplied] = useState(filters.q ?? "");
   const analyticsSectionRef = useRef<HTMLElement | null>(null);
+  const tableQTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rawQTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const effectiveFilters = filters;
+  const effectiveFilters = useMemo<DashboardFilters>(
+    () => ({
+      ...filters,
+      tableQ: tableQApplied || undefined,
+      q: rawQApplied || undefined
+    }),
+    [filters, rawQApplied, tableQApplied]
+  );
+
+  useEffect(
+    () => () => {
+      if (tableQTimerRef.current) clearTimeout(tableQTimerRef.current);
+      if (rawQTimerRef.current) clearTimeout(rawQTimerRef.current);
+    },
+    []
+  );
 
   useEffect(() => {
     setTableQInput(filters.tableQ ?? "");
+    setTableQApplied(filters.tableQ ?? "");
   }, [filters.tableQ]);
 
   useEffect(() => {
-    const nextTableQ = tableQInput.trim();
-    if (nextTableQ === (filters.tableQ ?? "")) return;
+    setRawQInput(filters.q ?? "");
+    setRawQApplied(filters.q ?? "");
+  }, [filters.q]);
 
-    const timer = window.setTimeout(() => {
-      setFilters({ tableQ: nextTableQ || undefined });
+  const handleTableQChange = useCallback((value: string) => {
+    setTableQInput(value);
+    if (tableQTimerRef.current) clearTimeout(tableQTimerRef.current);
+
+    tableQTimerRef.current = setTimeout(() => {
+      setTableQApplied(value.trim());
     }, 400);
+  }, []);
 
-    return () => window.clearTimeout(timer);
-  }, [filters.tableQ, setFilters, tableQInput]);
+  const handleRawQChange = useCallback((value: string) => {
+    setRawQInput(value);
+    if (rawQTimerRef.current) clearTimeout(rawQTimerRef.current);
+
+    rawQTimerRef.current = setTimeout(() => {
+      setRawQApplied(value.trim());
+    }, 400);
+  }, []);
 
   useEffect(() => {
     setRawPage(1);
@@ -654,14 +698,15 @@ export function FlowLensDashboard() {
   );
 
   const filterOptionsQuery = useQuery({
-    queryKey: ["dashboard", "filter-options", effectiveFilters],
-    queryFn: () => getFilterOptions(effectiveFilters),
+    queryKey: ["dashboard", "filter-options", "stable-baseline"],
+    queryFn: () => getFilterOptions(STABLE_BASELINE_FILTERS),
     enabled: analyticsActivated
   });
 
   const globeQuery = useQuery({
-    queryKey: ["dashboard", "globe-flows", effectiveFilters],
-    queryFn: () => getGlobeFlows(effectiveFilters)
+    queryKey: ["dashboard", "globe-flows", "stable-baseline"],
+    queryFn: () => getGlobeFlows(STABLE_BASELINE_FILTERS),
+    placeholderData: keepPreviousData
   });
 
   const metricsQuery = useQuery({
@@ -706,7 +751,8 @@ export function FlowLensDashboard() {
   const rawTableQuery = useQuery({
     queryKey: ["dashboard", "raw-table", effectiveFilters, rawPage],
     queryFn: () => getRawTable(effectiveFilters, rawPage, 25),
-    enabled: analyticsActivated && activeTab === "raw"
+    enabled: analyticsActivated && activeTab === "raw",
+    placeholderData: keepPreviousData
   });
 
   const detailQuery = useQuery({
@@ -831,7 +877,12 @@ export function FlowLensDashboard() {
                 <button
                   className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-500/60 bg-slate-900/45 px-4 text-sm text-slate-100 transition hover:border-sky-300"
                   onClick={() => {
+                    if (tableQTimerRef.current) clearTimeout(tableQTimerRef.current);
+                    if (rawQTimerRef.current) clearTimeout(rawQTimerRef.current);
                     setTableQInput("");
+                    setRawQInput("");
+                    setTableQApplied("");
+                    setRawQApplied("");
                     resetFilters();
                   }}
                 >
@@ -898,7 +949,7 @@ export function FlowLensDashboard() {
                 pageSize={countryQuery.data?.data.pageSize ?? 25}
                 totalRows={countryQuery.data?.data.totalRows ?? 0}
                 tableQ={tableQInput}
-                onTableQChange={setTableQInput}
+                onTableQChange={handleTableQChange}
                 onNext={() => setCountryPage((page) => page + 1)}
                 onPrev={() => setCountryPage((page) => Math.max(1, page - 1))}
                 sortBy={countrySortBy}
@@ -916,7 +967,7 @@ export function FlowLensDashboard() {
                 pageSize={flowSummaryQuery.data?.data.pageSize ?? 25}
                 totalRows={flowSummaryQuery.data?.data.totalRows ?? 0}
                 tableQ={tableQInput}
-                onTableQChange={setTableQInput}
+                onTableQChange={handleTableQChange}
                 onNext={() => setFlowPage((page) => page + 1)}
                 onPrev={() => setFlowPage((page) => Math.max(1, page - 1))}
                 sortBy={flowSortBy}
@@ -940,10 +991,13 @@ export function FlowLensDashboard() {
             {activeTab === "raw" && (
               <RawDataTab
                 rows={rawTableQuery.data?.data.rows ?? []}
-                loading={rawTableQuery.isLoading}
+                loading={rawTableQuery.isLoading && !rawTableQuery.data && !rawQInput}
+                refreshing={rawTableQuery.isFetching && Boolean(rawTableQuery.data || rawQInput)}
                 page={rawTableQuery.data?.data.page ?? rawPage}
                 pageSize={rawTableQuery.data?.data.pageSize ?? 25}
                 totalRows={rawTableQuery.data?.data.totalRows ?? 0}
+                rawQ={rawQInput}
+                onRawQChange={handleRawQChange}
                 onNext={() => setRawPage((page) => page + 1)}
                 onPrev={() => setRawPage((page) => Math.max(1, page - 1))}
                 onSelectProject={setSelectedProjectKey}
@@ -1484,7 +1538,7 @@ function GlobeHero({
     [arcHoverEnabled, pinnedCountryIso3]
   );
 
-  const clearCountryFocus = useCallback(() => {
+  const clearLocalCountryFocus = useCallback(() => {
     if (hoverClearTimeoutRef.current) {
       clearTimeout(hoverClearTimeoutRef.current);
       hoverClearTimeoutRef.current = null;
@@ -1496,6 +1550,10 @@ function GlobeHero({
     setHoveredCountryName(null);
     setSelectedCorridor(null);
   }, []);
+
+  const clearCountryFocus = useCallback(() => {
+    clearLocalCountryFocus();
+  }, [clearLocalCountryFocus]);
 
   const cancelHoverClear = useCallback(() => {
     if (!hoverClearTimeoutRef.current) return;
@@ -1525,7 +1583,7 @@ function GlobeHero({
 
   const rotateToCountry = useCallback(
     (iso3: string) => {
-      const target = countryCoordinates.get(iso3) ?? countryAnchorByIso.get(iso3);
+      const target = countryAnchorByIso.get(iso3) ?? countryCoordinates.get(iso3);
       const globe = globeRef.current;
       if (!globe || !target) return;
       globe.pointOfView({ lat: target.lat, lng: target.lng, altitude: fullScreen ? 0.62 : 1.25 }, 900);
@@ -1762,13 +1820,13 @@ function GlobeHero({
         </div>
       ) : rows.length === 0 ? (
         <div
-          className={`flex items-center justify-center p-6 text-center text-sm text-slate-300 ${
+          className={`flex flex-col items-center justify-center gap-3 p-6 text-center text-sm text-slate-300 ${
             fullScreen
               ? "h-full min-h-[100svh] bg-[#01040a]"
               : "h-[62vh] min-h-[420px] rounded-2xl border border-slate-700 bg-slate-900/70"
           }`}
         >
-          No exact-country corridors match the current filters.
+          <p>No exact-country corridors are available for the globe right now.</p>
         </div>
       ) : (
         <div className="relative">
@@ -1958,7 +2016,7 @@ function GlobeHero({
                   lineHoverPrecision={0.14}
                   backgroundColor="rgba(0,0,0,0)"
                   globeImageUrl={activeBasemap.globeImageUrl}
-                  globeTileEngineUrl={(x: number, y: number, l: number) => activeBasemap.tileUrl(x, y, l)}
+                  {...(activeBasemap.tileUrl ? { globeTileEngineUrl: activeBasemap.tileUrl } : {})}
                   htmlElementsData={globeTextLabels}
                   htmlLat={(label: GlobeTextLabel) => label.lat}
                   htmlLng={(label: GlobeTextLabel) => label.lng}
@@ -1972,7 +2030,7 @@ function GlobeHero({
                     if (!iso3) return `${name}<br/>No donation data available`;
                     const stats = countryCorridorIndex[iso3];
                     if (!stats || (stats.inbound.length === 0 && stats.outbound.length === 0 && stats.selfFlows.length === 0)) {
-                      return `${name}<br/>No corridors under current globe filters`;
+                      return `${name}<br/>No corridors in globe dataset`;
                     }
                     return `${name}<br/>Outbound: ${formatUsdMillions(stats.totalOutboundUsd)}<br/>Inbound: ${formatUsdMillions(stats.totalInboundUsd)}`;
                   }}
@@ -2162,6 +2220,7 @@ function GlobeHero({
               <p className="font-semibold text-slate-100">Legend</p>
               <p className="mt-1">Overview shows a restrained Top global corridor set. Focus mode shows only selected-country links.</p>
               <p className="mt-1">Outbound uses warm lines; inbound uses cool lines. Direction also uses line pattern and motion.</p>
+              <p className="mt-1 text-[10px] text-slate-400">Basemap: {activeBasemap.attribution}</p>
             </div>
           )}
 
@@ -2184,7 +2243,7 @@ function GlobeHero({
                 </>
               ) : (
                 <p className="mt-3 rounded-md border border-slate-600/70 bg-slate-900/75 p-2 text-xs text-slate-200">
-                  No donation corridors found for this country under the current globe filters.
+                  No donation corridors found for this country in the globe dataset.
                 </p>
               )}
             </aside>
@@ -2230,7 +2289,7 @@ function GlobeHero({
 
               {pinnedHasNoFlows ? (
                 <p className={`mt-3 rounded-md border p-3 text-xs text-slate-200 ${pinnedSubPanelClass}`}>
-                  No donation corridors found for this country under the current filters. Try changing year, direction, or corridor limit.
+                  No donation corridors found for this country in the globe dataset.
                 </p>
               ) : (
                 <>
@@ -2412,9 +2471,7 @@ function JudgeInsightCards({
   }
 
   const topFlow = flows[0];
-  const topFlowShare = metrics?.totalFunding
-    ? Math.round((topFlow?.totalFunding ?? 0) / metrics.totalFunding * 100)
-    : 0;
+  const topFlowShare = boundedPercent(topFlow?.totalFunding ?? 0, metrics?.totalFunding);
   const groupedCause = new Map<string, number>();
   for (const row of causeRows) groupedCause.set(row.cause, (groupedCause.get(row.cause) ?? 0) + row.totalFunding);
   const causeSorted = Array.from(groupedCause.entries()).sort((a, b) => b[1] - a[1]);
@@ -2423,6 +2480,7 @@ function JudgeInsightCards({
   const filterTokens = [
     filters.year ? `Year: ${filters.year}` : "Year: All years",
     filters.includeDomestic ? "Domestic: included" : "Domestic: excluded",
+    filters.connectedCountry ? `Connected: ${filters.connectedCountry}` : null,
     filters.cause ? `Cause: ${filters.cause}` : null,
     filters.region ? `Region: ${filters.region}` : null
   ].filter(Boolean) as string[];
@@ -3045,18 +3103,30 @@ function CauseTab({
   const organizationRows = applyTopN(groupBreakdown(summaryCharts?.causeByOrganization ?? []));
   const sectorRows = applyTopN(groupBreakdown(summaryCharts?.causeBySector ?? []));
   const axisCurrencyLabel = (value: number) => formatUsdMillions(value, true);
+  const valueAxis = {
+    type: "value",
+    axisLabel: {
+      formatter: axisCurrencyLabel,
+      margin: 12,
+      hideOverlap: true
+    }
+  };
+  const categoryAxis = (rowsIn: Array<{ label: string }>, labelWidth = 190) => ({
+    type: "category",
+    data: rowsIn.map((item) => item.label).reverse(),
+    axisLabel: {
+      width: labelWidth,
+      overflow: "truncate",
+      ellipsis: "...",
+      margin: 10
+    }
+  });
 
   const headlineOption = {
-    grid: { top: 20, right: 20, bottom: 20, left: 130 },
+    grid: { top: 20, right: 24, bottom: 52, left: 8, containLabel: true },
     tooltip: { trigger: "axis" },
-    xAxis: {
-      type: "value",
-      axisLabel: { formatter: axisCurrencyLabel }
-    },
-    yAxis: {
-      type: "category",
-      data: causeRows.map((item) => item.label).reverse()
-    },
+    xAxis: valueAxis,
+    yAxis: categoryAxis(causeRows, 130),
     series: [
       {
         type: "bar",
@@ -3067,17 +3137,14 @@ function CauseTab({
   };
 
   const continentOption = {
-    grid: { top: 22, right: 16, bottom: 50, left: 48 },
+    grid: { top: 22, right: 18, bottom: 58, left: 10, containLabel: true },
     tooltip: { trigger: "axis" },
     xAxis: {
       type: "category",
-      axisLabel: { rotate: 18 },
+      axisLabel: { rotate: 18, margin: 12, hideOverlap: true },
       data: donorContinentRows.map((item) => item.label)
     },
-    yAxis: {
-      type: "value",
-      axisLabel: { formatter: axisCurrencyLabel }
-    },
+    yAxis: valueAxis,
     series: [
       {
         type: "bar",
@@ -3088,16 +3155,10 @@ function CauseTab({
   };
 
   const organizationOption = {
-    grid: { top: 20, right: 20, bottom: 16, left: 170 },
+    grid: { top: 20, right: 24, bottom: 54, left: 8, containLabel: true },
     tooltip: { trigger: "axis" },
-    xAxis: {
-      type: "value",
-      axisLabel: { formatter: axisCurrencyLabel }
-    },
-    yAxis: {
-      type: "category",
-      data: organizationRows.map((item) => item.label).reverse()
-    },
+    xAxis: valueAxis,
+    yAxis: categoryAxis(organizationRows, 185),
     series: [
       {
         type: "bar",
@@ -3108,16 +3169,10 @@ function CauseTab({
   };
 
   const sectorOption = {
-    grid: { top: 20, right: 20, bottom: 16, left: 170 },
+    grid: { top: 20, right: 26, bottom: 58, left: 8, containLabel: true },
     tooltip: { trigger: "axis" },
-    xAxis: {
-      type: "value",
-      axisLabel: { formatter: axisCurrencyLabel }
-    },
-    yAxis: {
-      type: "category",
-      data: sectorRows.map((item) => item.label).reverse()
-    },
+    xAxis: valueAxis,
+    yAxis: categoryAxis(sectorRows, 220),
     series: [
       {
         type: "bar",
@@ -3207,7 +3262,7 @@ function CauseTab({
           {sectorRows.length === 0 ? (
             <p className="mt-4 text-sm text-slate-300">No sector rows matched the current filters.</p>
           ) : (
-            <ReactECharts option={sectorOption} style={{ height: 320 }} />
+            <ReactECharts option={sectorOption} style={{ height: 380 }} />
           )}
         </section>
 
@@ -3306,22 +3361,29 @@ function YearlyTab({ rows, loading }: { rows: YearlySummaryRow[]; loading: boole
 function RawDataTab({
   rows,
   loading,
+  refreshing,
   page,
   pageSize,
   totalRows,
+  rawQ,
+  onRawQChange,
   onNext,
   onPrev,
   onSelectProject
 }: {
   rows: RawTableRow[];
   loading: boolean;
+  refreshing: boolean;
   page: number;
   pageSize: number;
   totalRows: number;
+  rawQ?: string;
+  onRawQChange: (value: string) => void;
   onNext: () => void;
   onPrev: () => void;
   onSelectProject: (projectKey: string) => void;
 }) {
+  if (loading) return <LoadingPanel label="Loading raw data" id="panel-raw" />;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
 
   return (
@@ -3333,28 +3395,44 @@ function RawDataTab({
         </p>
       </section>
 
-      <div className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-950/70">
+      <section className="rounded-2xl border border-slate-700 bg-slate-950/70 p-4">
+        <label className="block text-xs uppercase tracking-wide text-slate-400">Raw data search</label>
+        <div className="mt-2 flex h-10 items-center rounded-md border border-slate-700 bg-slate-900 px-2">
+          <Search size={14} className="text-slate-400" />
+          <input
+            className="h-full flex-1 border-0 bg-transparent px-2 text-sm text-slate-200 outline-none"
+            placeholder="Search project title or organization"
+            value={rawQ ?? ""}
+            onChange={(event) => onRawQChange(event.currentTarget.value)}
+            autoComplete="off"
+            aria-label="Raw data search"
+          />
+        </div>
+      </section>
+
+      <div className="relative min-h-[360px] overflow-hidden rounded-2xl border border-slate-700 bg-slate-950/70">
+        {refreshing && (
+          <div className="pointer-events-none absolute right-3 top-3 z-10 inline-flex h-8 items-center gap-2 rounded-full border border-slate-600/80 bg-slate-950/90 px-3 text-xs text-slate-200 shadow-lg">
+            <Loader2 size={14} className="animate-spin text-sky-200" />
+            Updating
+          </div>
+        )}
         <table className="min-w-full text-sm">
           <thead className="bg-slate-900/60 text-left text-xs uppercase tracking-wide text-slate-400">
             <tr>
               <th className="px-4 py-3">Project</th>
               <th className="px-4 py-3">Year</th>
               <th className="px-4 py-3">Organization</th>
+              <th className="px-4 py-3">Donor Country</th>
               <th className="px-4 py-3">Recipient</th>
+              <th className="px-4 py-3">Flow Type</th>
               <th className="px-4 py-3">Amount</th>
             </tr>
           </thead>
           <tbody>
-            {loading ? (
+            {rows.length === 0 ? (
               <tr>
-                <td className="px-4 py-8 text-center text-slate-300" colSpan={5}>
-                  <Loader2 className="mr-2 inline animate-spin" size={14} />
-                  Loading rows...
-                </td>
-              </tr>
-            ) : rows.length === 0 ? (
-              <tr>
-                <td className="px-4 py-8 text-center text-slate-300" colSpan={5}>
+                <td className="px-4 py-8 text-center text-slate-300" colSpan={7}>
                   No records matched these filters.
                 </td>
               </tr>
@@ -3373,7 +3451,9 @@ function RawDataTab({
                   </td>
                   <td className="px-4 py-3">{row.yearLabel}</td>
                   <td className="px-4 py-3">{row.organization}</td>
+                  <td className="px-4 py-3">{row.donorCountry ?? "Unknown"}</td>
                   <td className="px-4 py-3">{row.recipientCountry}</td>
+                  <td className="px-4 py-3">{row.flowType ?? "Unknown"}</td>
                   <td className="px-4 py-3">{formatUsdMillions(row.amountUsd, false)}</td>
                 </tr>
               ))
@@ -3438,6 +3518,8 @@ function SelectField({
   options?: FilterOption[];
   onChange: (next: string | undefined) => void;
 }) {
+  const hasCurrentOption = !value || (options ?? []).some((option) => option.value === value);
+
   return (
     <label className="block">
       <span className="mb-1 block text-xs uppercase tracking-wide text-slate-400">{label}</span>
@@ -3447,6 +3529,7 @@ function SelectField({
         onChange={(event) => onChange(event.currentTarget.value || undefined)}
       >
         <option value="">All</option>
+        {value && !hasCurrentOption && <option value={value}>{value}</option>}
         {(options ?? []).map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
@@ -3480,6 +3563,19 @@ function FilterDrawer({
   };
 }) {
   if (!open) return null;
+
+  const connectedCountryOptions = Array.from(
+    [...(options?.donorCountries ?? []), ...(options?.recipientCountries ?? [])]
+      .reduce<Map<string, FilterOption>>((map, option) => {
+        const existing = map.get(option.value);
+        map.set(option.value, {
+          ...option,
+          count: (existing?.count ?? 0) + (option.count ?? 0)
+        });
+        return map;
+      }, new Map())
+      .values()
+  ).sort((a, b) => (b.count ?? 0) - (a.count ?? 0) || a.label.localeCompare(b.label));
 
   return (
     <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose}>
@@ -3535,6 +3631,12 @@ function FilterDrawer({
             onChange={(recipientCountry) => setFilters({ recipientCountry })}
           />
           <SelectField
+            label="Connected Country"
+            value={filters.connectedCountry}
+            options={connectedCountryOptions}
+            onChange={(connectedCountry) => setFilters({ connectedCountry })}
+          />
+          <SelectField
             label="Organization"
             value={filters.organization}
             options={options?.organizations}
@@ -3545,6 +3647,12 @@ function FilterDrawer({
             value={filters.region}
             options={options?.regions}
             onChange={(region) => setFilters({ region })}
+          />
+          <SelectField
+            label="Sector"
+            value={filters.sector}
+            options={options?.sectors}
+            onChange={(sector) => setFilters({ sector })}
           />
           <SelectField
             label="Cause"

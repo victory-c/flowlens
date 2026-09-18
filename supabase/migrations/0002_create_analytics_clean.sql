@@ -7,8 +7,10 @@ create table if not exists analytics_clean.main_dashboard (
   year_label text not null,
   year_int integer null,
   donor text not null,
+  donor_country text null,
   region text not null,
   recipient_country text not null,
+  flow_type text null,
   sector_name text not null,
   amount_usd double precision not null,
   project_title text null,
@@ -26,8 +28,10 @@ create table if not exists analytics_clean.main_dashboard (
       coalesce(project_id, '') || ' ' ||
       coalesce(project_key, '') || ' ' ||
       coalesce(donor, '') || ' ' ||
+      coalesce(donor_country, '') || ' ' ||
       coalesce(region, '') || ' ' ||
       coalesce(recipient_country, '') || ' ' ||
+      coalesce(flow_type, '') || ' ' ||
       coalesce(sector_name, '')
     )
   ) stored
@@ -80,8 +84,10 @@ create table if not exists analytics_clean.cause_marker (
 create index if not exists idx_clean_main_year on analytics_clean.main_dashboard (year_label);
 create index if not exists idx_clean_main_year_int on analytics_clean.main_dashboard (year_int);
 create index if not exists idx_clean_main_donor on analytics_clean.main_dashboard (donor);
+create index if not exists idx_clean_main_donor_country on analytics_clean.main_dashboard (donor_country);
 create index if not exists idx_clean_main_region on analytics_clean.main_dashboard (region);
 create index if not exists idx_clean_main_recipient on analytics_clean.main_dashboard (recipient_country);
+create index if not exists idx_clean_main_flow_type on analytics_clean.main_dashboard (flow_type);
 create index if not exists idx_clean_main_sector on analytics_clean.main_dashboard (sector_name);
 create index if not exists idx_clean_main_project_key on analytics_clean.main_dashboard (project_key);
 create index if not exists idx_clean_main_project_id on analytics_clean.main_dashboard (project_id);

@@ -14,6 +14,7 @@ const STRING_KEYS = [
   "year",
   "donorCountry",
   "recipientCountry",
+  "connectedCountry",
   "region",
   "organization",
   "donor",
@@ -45,6 +46,8 @@ export function useDashboardFilters() {
         next[key] = value;
       }
     }
+
+    next.connectedCountry ??= searchParams.get("country") ?? searchParams.get("focusCountry") ?? undefined;
 
     const minAmount = searchParams.get("minAmount");
     if (minAmount) {
