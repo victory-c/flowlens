@@ -6,49 +6,23 @@ FlowLens is a philanthropic capital intelligence dashboard for tracing OECD foun
 
 - Next.js App Router + TypeScript
 - Vercel route handlers for server-only analytics APIs
-- Supabase Postgres for the raw OECD table, geo lookup, indexes, and materialized summaries
+- Embedded Postgres ([PGlite](https://pglite.dev)) loaded from a committed data snapshot, so Vercel is the only service needed; a hosted Postgres (Supabase) is optional
 - Tailwind CSS, ECharts, TanStack Query, TanStack Table patterns, and lucide-react
 
 ## Local Setup
 
 ```bash
 pnpm install
-cp .env.example .env.local
-```
-
-Set `DATABASE_URL` to a Supabase Postgres connection string. Keep service credentials server-only.
-
-Apply the SQL migration in `supabase/migrations/0001_flowlens_analytics.sql` with the Supabase SQL editor, Supabase CLI, or `psql`.
-
-Import the raw CSV:
-
-```bash
-pnpm db:import
-pnpm db:refresh
-```
-
-Validate data and analytics:
-
-```bash
-pnpm validate:import
-pnpm validate:analytics
-```
-
-Run the app:
-
-```bash
 pnpm dev
 ```
 
+No database or environment variables are required: the API loads `data/embedded/*.csv.gz` into an in-process Postgres on first request. To regenerate that snapshot from the cleaned CSVs, see [docs/deployment.md](docs/deployment.md).
+
 ## Vercel Deployment
 
-Set these environment variables in Vercel:
+Connect the repo to Vercel with the default Next.js preset and deploy. No environment variables are needed; the embedded data is used unless `FLOWLENS_DATA_SOURCE=postgres` and `DATABASE_URL` are both set (see [docs/deployment.md](docs/deployment.md)).
 
-- `DATABASE_URL`
-- `DATABASE_SSL=true`
-- `NEXT_PUBLIC_APP_URL`
-
-Do not deploy the raw CSV to Vercel. The Next config excludes the local CSV names and `data/raw/**`; import the data into Supabase before deploying.
+Do not deploy the raw CSV to Vercel. The Next config excludes the local CSV names, `data/raw/**`, and `cleaned_data6/**`; only the generated `data/embedded/` snapshot ships.
 
 ## API Surface
 
@@ -63,7 +37,7 @@ Do not deploy the raw CSV to Vercel. The Next config excludes the local CSV name
 - `GET /api/health`
 - `GET /api/v1/dashboard-data`
 
-The frontend never reads Supabase raw tables directly. It talks to route handlers, which validate filters with Zod and use a repository interface built around product concepts.
+The frontend never reads database tables directly. It talks to route handlers, which validate filters with Zod and use a repository interface built around product concepts.
 
 ### API Query Examples
 

@@ -162,30 +162,32 @@ const CAVEAT_LABEL: Record<CaveatTag, string> = {
   domestic_flow: "Domestic flow"
 };
 
+// Both basemaps work without an API key: Esri's public, label-free ocean basemap tiles
+// for light mode, and a self-hosted dark texture (no tile service) for dark mode. The
+// globe draws its own country polygons and labels on top, so neither base carries labels.
 const GLOBE_BASEMAPS: Array<{
   id: GlobeBasemapId;
   label: string;
   description: string;
   attribution: string;
   globeImageUrl: string;
-  tileUrl: (x: number, y: number, l: number) => string;
+  tileUrl?: (x: number, y: number, l: number) => string;
 }> = [
   {
     id: "voyager",
-    label: "Voyager",
+    label: "Atlas",
     description: "Light atlas style with high-contrast custom overlays.",
-    attribution: "CARTO + OpenStreetMap contributors",
-    globeImageUrl: "https://unpkg.com/three-globe/example/img/earth-water.png",
+    attribution: "Esri, GEBCO, NOAA, National Geographic, Garmin, HERE, Geonames.org, and other contributors",
+    globeImageUrl: "/globe/earth-water.png",
     tileUrl: (x, y, l) =>
-      `https://a.basemaps.cartocdn.com/rastertiles/voyager_nolabels/${l}/${x}/${y}.png`
+      `https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/${l}/${y}/${x}`
   },
   {
     id: "dark-matter",
-    label: "Dark Matter",
+    label: "Dark",
     description: "Dark high-contrast base tuned for current globe styling.",
-    attribution: "CARTO + OpenStreetMap contributors",
-    globeImageUrl: "https://unpkg.com/three-globe/example/img/earth-water.png",
-    tileUrl: (x, y, l) => `https://a.basemaps.cartocdn.com/dark_nolabels/${l}/${x}/${y}.png`
+    attribution: "three-globe example texture (NASA)",
+    globeImageUrl: "/globe/earth-dark.jpg"
   }
 ];
 
@@ -2014,7 +2016,7 @@ function GlobeHero({
                   lineHoverPrecision={0.14}
                   backgroundColor="rgba(0,0,0,0)"
                   globeImageUrl={activeBasemap.globeImageUrl}
-                  globeTileEngineUrl={(x: number, y: number, l: number) => activeBasemap.tileUrl(x, y, l)}
+                  {...(activeBasemap.tileUrl ? { globeTileEngineUrl: activeBasemap.tileUrl } : {})}
                   htmlElementsData={globeTextLabels}
                   htmlLat={(label: GlobeTextLabel) => label.lat}
                   htmlLng={(label: GlobeTextLabel) => label.lng}
@@ -2218,6 +2220,7 @@ function GlobeHero({
               <p className="font-semibold text-slate-100">Legend</p>
               <p className="mt-1">Overview shows a restrained Top global corridor set. Focus mode shows only selected-country links.</p>
               <p className="mt-1">Outbound uses warm lines; inbound uses cool lines. Direction also uses line pattern and motion.</p>
+              <p className="mt-1 text-[10px] text-slate-400">Basemap: {activeBasemap.attribution}</p>
             </div>
           )}
 

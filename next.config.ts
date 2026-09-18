@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // PGlite loads its WASM/data files relative to its own package, so it must not be bundled.
+  serverExternalPackages: ["@electric-sql/pglite"],
+  outputFileTracingIncludes: {
+    "/api/**/*": ["./data/embedded/**", "./data/lookup/**"]
+  },
   outputFileTracingExcludes: {
     "*": [
       "./OECD Dataset.xlsx - complete_p4d3_df.csv",
