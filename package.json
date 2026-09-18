@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "tsx scripts/build-embedded-pgdata.ts && next build",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
@@ -17,6 +17,7 @@
     "validate:cleaned-analytics": "tsx scripts/validate-cleaned-analytics.ts",
     "generate:flow-summary": "node scripts/generate-flow-summary.mjs",
     "build:embedded-data": "tsx scripts/build-embedded-dataset.ts",
+    "build:embedded-pgdata": "tsx scripts/build-embedded-pgdata.ts",
     "db:import": "tsx scripts/import-raw-data.ts",
     "import:cleaned-data": "tsx scripts/import-cleaned-csvs.ts",
     "db:import-cleaned": "tsx scripts/import-cleaned-csvs.ts",

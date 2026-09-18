@@ -8,6 +8,9 @@ export const EMBEDDED_FILES = {
   flowSummary: "flow_summary.csv.gz"
 } as const;
 
+// Build artifact produced by scripts/build-embedded-pgdata.ts; not committed.
+export const EMBEDDED_PGDATA_FILE = "pgdata.tar.gz";
+
 export const MAIN_COLUMNS = [
   "year_label",
   "year_int",
