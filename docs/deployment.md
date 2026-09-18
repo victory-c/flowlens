@@ -19,7 +19,7 @@ requests are served from memory and API responses are CDN-cached for a day.
 ## Refreshing the embedded data
 
 The snapshot is generated from the cleaned CSVs plus the raw OECD CSV (for donor country and flow
-type). Both inputs stay out of git; only the generated snapshot is committed.
+type). Both inputs stay out of git; only the generated snapshot in `data/embedded/` is committed.
 
 ```bash
 FLOWLENS_CLEANED_DATA_DIR=./cleaned_data6 \

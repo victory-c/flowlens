@@ -19,5 +19,3 @@ supabase/.branches/
 supabase/.temp/
 .vercel
 
-# Embedded data snapshot: generated locally, deployed via `vercel` CLI, never committed.
-data/embedded/
