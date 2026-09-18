@@ -16,12 +16,14 @@
     "validate:cleaned-import": "tsx scripts/validate-cleaned-import.ts",
     "validate:cleaned-analytics": "tsx scripts/validate-cleaned-analytics.ts",
     "generate:flow-summary": "node scripts/generate-flow-summary.mjs",
+    "build:embedded-data": "tsx scripts/build-embedded-dataset.ts",
     "db:import": "tsx scripts/import-raw-data.ts",
     "import:cleaned-data": "tsx scripts/import-cleaned-csvs.ts",
     "db:import-cleaned": "tsx scripts/import-cleaned-csvs.ts",
     "db:refresh": "tsx scripts/refresh-materialized-views.ts"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@tanstack/react-query": "^5.62.8",
     "@tanstack/react-table": "^8.20.6",
     "@types/three": "^0.184.0",
